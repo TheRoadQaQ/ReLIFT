@@ -1,0 +1,7 @@
+/dataset/**
+**/.ipynb_checkpoints/**
+**/__pycache__/**
+/eval_scripts/**
+/outputs/**
+/wandb/**
+/train_results/**
