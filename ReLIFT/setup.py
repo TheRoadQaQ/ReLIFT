@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='luffy',
+    name='relift',
     version='0.0.0',
-    description='LUFFY: Learning to Reason under Off-Policy Guidance',
-    author='Jianhao Yan',
+    description='Learning What Reinforcement Learning Can Not',
+    author='Lu Ma',
     packages=find_packages(include=['deepscaler',]),
     install_requires=[
         'google-cloud-aiplatform',
