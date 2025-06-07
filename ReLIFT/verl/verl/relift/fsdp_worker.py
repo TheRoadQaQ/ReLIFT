@@ -81,6 +81,9 @@ class ReLIFTActorRolloutRefWorker(Worker):
             self._is_offload_param = self.config.actor.fsdp_config.get('param_offload', False)
             self._is_offload_grad = self.config.actor.fsdp_config.get('grad_offload', False)
             self._is_offload_optimizer = self.config.actor.fsdp_config.get('optimizer_offload', False)
+            
+            self._is_offload_sft_param = self.config.actor.fsdp_config.get('sft_param_offload', False)
+            self._is_offload_sft_grad = self.config.actor.fsdp_config.get('sft_grad_offload', False)
             self._is_offload_sft_optimizer = self.config.actor.fsdp_config.get('sft_optimizer_offload', False)
         elif self._is_ref:
             # TODO: it seems that manual offload is slowly than FSDP offload
@@ -418,8 +421,6 @@ class ReLIFTActorRolloutRefWorker(Worker):
             offload_fsdp_param_and_grad(module=self.actor_module_fsdp, offload_grad=self._is_offload_grad)
         if self._is_offload_optimizer:
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
-        if self._is_offload_sft_optimizer:
-            offload_fsdp_optimizer(optimizer=self.actor_sft_optimizer)
 
         torch.cuda.empty_cache()
         return output
@@ -429,10 +430,10 @@ class ReLIFTActorRolloutRefWorker(Worker):
         data = data.to('cuda')
 
         assert self._is_actor
-        if self._is_offload_param:
+        if self._is_offload_sft_param:
             load_fsdp_param_and_grad(module=self.actor_module_fsdp,
                                      device_id=torch.cuda.current_device(),
-                                     load_grad=self._is_offload_grad)
+                                     load_grad=self._is_offload_sft_grad)
             
         if self._is_offload_sft_optimizer:
             load_fsdp_optimizer(optimizer=self.actor_sft_optimizer, device_id=torch.cuda.current_device())
@@ -463,10 +464,11 @@ class ReLIFTActorRolloutRefWorker(Worker):
             output = self.ulysses_sharding_manager.postprocess_data(data=output)
             output = output.to('cpu')
 
-        if self._is_offload_param:
-            offload_fsdp_param_and_grad(module=self.actor_module_fsdp, offload_grad=self._is_offload_grad)
+        if self._is_offload_sft_param:
+            offload_fsdp_param_and_grad(module=self.actor_module_fsdp, offload_grad=self._is_offload_sft_grad)
         if self._is_offload_sft_optimizer:
             offload_fsdp_optimizer(optimizer=self.actor_sft_optimizer)
+
         torch.cuda.empty_cache()
         return output
 

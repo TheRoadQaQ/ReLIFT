@@ -5,21 +5,13 @@ data:
   prompt_key: prompt
   max_prompt_length: 512
   max_response_length: 512
+  max_target_len: 8192
   train_batch_size: 1024
   val_batch_size: 1312
   return_raw_input_ids: False
   return_raw_chat: False
   reward_impl_version: 0
-  filter_targets: False
   shuffle: True
-  sample_target_ratio: 1.0
-  filter_accuracy: False
-  accuracy_lower_bound: 0.0
-  accuracy_upper_bound: 1.0
-  add_tgt_with_acc: False
-  add_tgt_acc_upper_bound: 0.5
-  disable_truncation_advantage: False
-
 
 actor_rollout_ref:
   hybrid_engine: True
@@ -51,6 +43,8 @@ actor_rollout_ref:
       min_lr_ratio: null   # only useful for warmup with cosine
       warmup_style: constant  # select from constant/cosine
       total_training_steps: -1  # must be override by program
+      sft:
+        lr: 1e-6
     fsdp_config:
       wrap_policy:
         # transformer_layer_cls_to_wrap: None
@@ -59,6 +53,9 @@ actor_rollout_ref:
       grad_offload: False
       optimizer_offload: False
       fsdp_size: -1
+      sft_param_offload: False
+      sft_grad_offload: False
+      sft_optimizer_offload: False
     all_max_clip: -1
     use_ppo_kl_loss: False
     ppo_kl_loss_coef: 0.01
@@ -71,6 +68,12 @@ actor_rollout_ref:
     use_target_lst: False
     loss_remove_token_mean: False
     loss_remove_clip: False
+    sft:
+      sft_epochs: 1
+      sft_data_size: 32 
+      sft_mini_batch_size: 32 
+      sft_micro_batch_size: 8 
+      entropy_coeff: 0.001
   ref:
     fsdp_config:
       param_offload: False
@@ -110,13 +113,7 @@ actor_rollout_ref:
     n: 1 # > 1 for grpo
     n_val: 8
     # define prefix hyperparameters
-    prefix_strategy: random
-    prefix_steps: 1000
-    prefix_linear_max_ratio: 0.8
-    prefix_linear_max_var: 0.1
     max_prefix_len: 8192
-    min_prefix_ratio: 0.0
-    max_prefix_ratio: 1.0
     prefix_reward_strategy: all
     prefix_reward_weight_alpha: 1.0
     prefix_reward_weight_beta: 1.0
@@ -185,11 +182,8 @@ algorithm:
     type: fixed
     kl_coef: 0.001
   grpo_use_std: True
-  surprisal_base: 0.0
 
 trainer:
-  rejection_sample: False # Reject sample prompts that all succeed or all fail (0 signal for GRPO due to normalization).
-  rejection_sample_multiplier: 2 # Multiple the training batch size by this factor to account for rejection sampling reduction.
   total_epochs: 30
   total_training_steps: null
   project_name: verl_examples
@@ -207,9 +201,5 @@ trainer:
   default_hdfs_dir: null #~/experiments/gsm8k/ppo/${trainer.experiment_name}
   default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
   debug: False
-  add_full_target_when_none: False
-  skip_valid_mask: False
-  acc_rebatch: False
-  skip_by_step: False
 
 

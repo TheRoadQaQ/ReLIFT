@@ -92,7 +92,6 @@ class MIXDataParallelPPOActor(DataParallelPPOActor):
                     self.alpha_optimizer.zero_grad()
 
                 for data in micro_batches:
-                    print("MICROBATCH STEP")
                     data = data.cuda()  # actor device is cpu when using offload
                     responses = data['responses']
                     response_length = responses.size(1)
@@ -132,13 +131,6 @@ class MIXDataParallelPPOActor(DataParallelPPOActor):
                     if 'on_policy_prob' in ret_dict:
                         data['actor/on_policy_prob'] = ret_dict['on_policy_prob'].detach().item()
                     append_to_dict(metrics, data)
-                        
-                    #    pg_loss, pg_clipfrac, ppo_kl = core_algos.compute_policy_loss(old_log_prob=old_log_prob, log_prob=log_prob,
-                    #                                                            advantages=advantages,
-                    #                                                            eos_mask=response_mask,
-                    #                                                            cliprange=clip_ratio,
-                    #                                                            loss_remove_token_mean=self.config.loss_remove_token_mean,
-                    #                                                            loss_remove_clip=self.config.loss_remove_clip)
                     
                     # compute entropy loss from entropy
                     entropy_loss = verl_F.masked_mean(entropy, response_mask)
@@ -263,7 +255,6 @@ class MIXDataParallelPPOActor(DataParallelPPOActor):
                 grad_norm = self._sft_optimizer_step()
                 data = {'actor/sft_grad_norm': grad_norm.detach().item()}
                 append_to_dict(metrics, data)
-
         self.actor_sft_optimizer.zero_grad()
         
         return metrics

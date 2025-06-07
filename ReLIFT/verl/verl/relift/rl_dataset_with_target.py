@@ -80,22 +80,11 @@ class RLHFDatasetWithTarget(RLHFDataset):
                  return_raw_chat=False,
                  truncation='error',
                  target_key='target',
-                 max_target_length=8192,
-                 filter_targets=False,
-                 sample_target_ratio=1.0,
-                 target_list_key='target_lst',
-                 max_num_targets=5,
-                 target_probs_key='target_ds_qwen_7b_probs',
-        ):
+                 max_target_length=8192):
         super().__init__(parquet_files, tokenizer, prompt_key, max_prompt_length, filter_prompts, cache_dir, chat_template_func, return_raw_chat, truncation)
         
         self.max_target_length = max_target_length
-        self.filter_targets = filter_targets
         self.target_key = target_key
-        self.sample_target_ratio = sample_target_ratio
-        self.target_list_key = target_list_key
-        self.target_probs_key = target_probs_key
-        self.max_num_targets = max_num_targets
 
         # add unique_id
         self.dataframe['sample_id'] = self.dataframe.index
@@ -124,21 +113,13 @@ class RLHFDatasetWithTarget(RLHFDataset):
         row_dict['position_ids'] = position_ids[0]
         
         tgt = row_dict.pop(self.target_key)
-        sample = np.random.rand() < self.sample_target_ratio
         
-        if tgt is not None and sample is True:
+        if tgt is not None:
             tgt = tgt[0]
         
             if prompt_with_chat_template.endswith('<think>\n') and tgt['content'].startswith('<think>\n'):
                 tgt['content'] = tgt['content'][len('<think>\n'):]
             tgt_input_ids = self.tokenizer(tgt['content'], add_special_tokens=False, return_tensors='pt')['input_ids'].reshape(-1) # [1, l]
-
-            # NOTE: we don't need to do this because we add eos token id at mix_vllm_rollout.py
-            
-            # if tgt_input_ids[-1].item() != self.tokenizer.eos_token_id:
-            #     eos_tensor = torch.tensor([self.tokenizer.eos_token_id], device=tgt_input_ids.device, dtype=tgt_input_ids.dtype).reshape(-1)
-            #     tgt_input_ids = torch.cat([tgt_input_ids, eos_tensor], dim=-1)
-            
             tgt_input_ids = tgt_input_ids.reshape(1, -1)
         else:
             tgt_input_ids = torch.tensor([], dtype=torch.long).reshape(1, 0) # empty target, will be pad to max_target_length
@@ -158,43 +139,6 @@ class RLHFDatasetWithTarget(RLHFDataset):
         tgt_input_ids = tgt_input_ids.squeeze(0)
 
         row_dict['tgt_input_ids'] = tgt_input_ids
-        
-        # process target_list
-        if getattr(self, 'target_list_key', "target_list_key") in row_dict:
-            target_list = row_dict.pop(self.target_list_key)
-            if target_list is None:
-                tgt_input_ids_lst = [torch.zeros_like(tgt_input_ids).fill_(self.tokenizer.pad_token_id)] * self.max_num_targets
-            else:
-                tgt_input_ids_lst = [self._process_target(tgt, prompt_with_chat_template, add_eos=True) for tgt in target_list]
-                if len(tgt_input_ids_lst) <= self.max_num_targets:
-                    tgt_input_ids_lst.extend([torch.zeros_like(tgt_input_ids_lst[0]).fill_(self.tokenizer.pad_token_id)] * (self.max_num_targets - len(tgt_input_ids_lst)))
-                else:
-                    tgt_input_ids_lst = tgt_input_ids_lst[:self.max_num_targets]
-            row_dict['tgt_input_ids_lst'] = torch.stack(tgt_input_ids_lst, dim=0) # [max_num_targets, max_target_length]
-        
-        if getattr(self, 'target_probs_key', "target_probs_key") in row_dict:
-            target_probs = row_dict.pop(self.target_probs_key)
-            if target_probs is not None:
-                target_probs_pt = torch.tensor(target_probs, dtype=torch.float32, device=tgt_input_ids.device)
-                target_probs_pt = target_probs_pt.reshape(1, -1)
-                # truncation
-                # prompt_len = (input_ids[0] != self.tokenizer.pad_token_id).sum()
-                tgt_len = (tgt_input_ids != self.tokenizer.pad_token_id).sum()
-                
-                assert target_probs_pt.shape[-1] == tgt_len+1
-                
-                # same padding as tgt_input_ids
-                if target_probs_pt.shape[-1] < self.max_target_length:
-                    target_probs_pt = pad_sequence_to_length(target_probs_pt,
-                                                max_seq_len=self.max_target_length,
-                                                pad_token_id=-1,
-                                                left_pad=False)
-                else:
-                    assert self.truncation in ('right', 'error')
-                    target_probs_pt = target_probs_pt[:, :self.max_target_length]
-                row_dict['target_probs'] = target_probs_pt.squeeze(0) # [max_target_length]
-            else:
-                row_dict['target_probs'] = torch.zeros_like(tgt_input_ids, dtype=torch.float32, device=tgt_input_ids.device).fill_(-1)
 
         # encode prompts without chat template
         if self.return_raw_chat:

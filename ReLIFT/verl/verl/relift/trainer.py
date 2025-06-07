@@ -204,9 +204,7 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
                                          max_prompt_length=self.config.data.max_prompt_length,
                                          filter_prompts=True, return_raw_chat=self.config.data.get('return_raw_chat', False),
                                          truncation='error',
-                                         max_target_length=self.config.actor_rollout_ref.rollout.max_prefix_len,
-                                         filter_targets=self.config.data.get('filter_targets', False),
-                                         sample_target_ratio=self.config.data.get('sample_target_ratio', 1.0))
+                                         max_target_length=self.config.data.max_target_len)
 
         # use sampler for better ckpt resume
         if self.config.data.shuffle:
