@@ -137,7 +137,7 @@ def main(config):
     if not ray.is_initialized():
         # this is for local ray cluster
         # "RAY_DEBUG": "1",
-        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
+        ray.init(runtime_env={'env_vars': {"RAY_DEBUG": "1", 'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
 
     ray.get(main_task.remote(config))
 

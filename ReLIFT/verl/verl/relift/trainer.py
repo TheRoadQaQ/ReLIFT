@@ -332,15 +332,12 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
         self.global_steps += 1
 
         n_samples = self.config.actor_rollout_ref.rollout.n
-        if self.config.data.get('add_tgt_with_acc', False):
-            n_samples = n_samples - 1 # if filter tgt with acc, we either use tgt or on policy samples.
-
         sft_buffer_batch = None
 
         batch_size = self.config.data.train_batch_size
         n_samples = self.config.actor_rollout_ref.rollout.n
 
-        #breakpoint()
+        breakpoint()
 
         for _ in range(self.config.trainer.total_epochs):
             
@@ -522,6 +519,8 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
                     sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
                     if len(sft_buffer_batch) >= sft_data_size:
                         with _timer('sft_update_actor', timing_raw):
+                            sft_buffer_batch.to('cpu')
+                            sft_buffer_batch.batch.to('cpu')
                             
                             sft_train_batch = sft_buffer_batch.slice(range(sft_data_size))
                             
