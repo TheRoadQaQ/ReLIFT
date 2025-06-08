@@ -4,7 +4,7 @@ Official Repository of "Learning what reinforcement learning can't"
 # 🔗Links
 
 - 📜 [Paper (arXiv)]()  
-- 🤗 [HuggingFace Collection]()
+- 🤗 [HuggingFace Collection](https://huggingface.co/collections/RoadQAQ/relift-684535e199a909cad16d8b05)
 
 ---
 
@@ -43,14 +43,14 @@ This repository includes:
 
 # 📖Introduction
 
-LUFFY is a reinforcement learning framework that bridges the gap between zero-RL and imitation learning by incorporating off-policy reasoning traces into the training process. Built upon GRPO, LUFFY combines on-policy rollouts with off-policy demonstrations during advantage estimation and introduces **policy shaping** via regularized importance sampling to emphasize low-probability yet crucial actions.
+ReLIFT, a training method that interleaves RL with online FT, achieving superior performance and efficiency compared to using RL or SFT alone.
 
 ![overview](./figures/luffy_performance.jpg)
 
 ### Key Highlights:
-- **Off-Policy Guidance:** Seamlessly integrates external reasoning traces to bootstrap learning from stronger models.
-- **Dynamic Balance:** Learns when to imitate and when to explore, adapting over the course of training.
-- **Policy Shaping:** Emphasizes important actions often ignored in standard policy gradients, enabling better generalization.
+- **RL interleaved with Fine-Tuning:** interleaves RL with online FT to learn what RL can't.
+- **Online Fine-Tuning:** only learn what RL can't, need only 13% demonstrations.
+- **Good Performance:** achieves superior performance and efficiency compared to using RL or SFT alone.
 
 ---
 
@@ -61,22 +61,23 @@ LUFFY is a reinforcement learning framework that bridges the gap between zero-RL
 ## Data Preparation
 You need to first run the data preparation script to get the training data in parquet format.
 ```bash
-cd data
+cd dataset
 python prepare_train.py
 ```
 
 ## Training
 
-We provide an example script to train LUFFY on our subset of OpenR1-Math-220k. You can run the following command to train LUFFY:
+We provide three example script to train. You can run the following command to train ReLIFT for different base models:
 
 ```bash
-  cd exp_scripts
-  bash train.sh
+  sh ./exp_scripts/train.sh
+  sh ./exp_scripts/train.sh
+  sh ./exp_scripts/train.sh
 ```
 
 ## Inference
 
-Here’s an example of using LUFFY for inference:
+Here’s an example of using ReLIFT for inference:
 
 <details>
 <summary>Click to view inference example</summary>
@@ -85,7 +86,7 @@ Here’s an example of using LUFFY for inference:
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 
-model_path="Elliott/LUFFY-Qwen-Math-7B-Zero"
+model_path="RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero"
 
 question = "which number is larger? 9.11 or 9.9?"
 
@@ -106,9 +107,9 @@ print(outputs[0].outputs[0].text)
 
 | **Model**                          | **Huggingface** |  **Base Model** |
 |-----------------------------------|------------------|------------------|
-| LUFFY-Qwen-Math-7B-Zero | https://huggingface.co/Elliott/LUFFY-Qwen-Math-7B-Zero |  Qwen2.5-Math-7B |
-| LUFFY-Qwen-Math-1.5B-Zero | https://huggingface.co/Elliott/LUFFY-Qwen-Math-1.5B-Zero | Qwen2.5-Math-1.5B |
-| LUFFY-Qwen-Instruct-7B | https://huggingface.co/Elliott/LUFFY-Qwen-Instruct-7B | Qwen2.5-7B-Instruct |
+| RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero | https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero |  Qwen2.5-Math-7B |
+| RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero | https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero | Qwen2.5-Math-1.5B |
+| RoadQAQ/ReLIFT-Qwen2.5-7B-Zero | https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero | Qwen2.5-7B |
 
 ---
 

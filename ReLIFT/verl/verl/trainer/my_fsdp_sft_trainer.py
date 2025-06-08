@@ -302,36 +302,6 @@ class MyFSDPSFTTrainer(object):
             torch.distributed.all_reduce(loss, op=torch.distributed.ReduceOp.AVG)
         return loss    
 
-
-    def validate(self, batch):
-        self.fsdp_model.eval()
-    
-        # Extract input_ids and attention_mask from batch
-        input_ids = batch['input_ids'].cuda()
-        attention_mask = batch['attention_mask'].cuda()
-        
-        # Generate text using the model
-        with torch.no_grad():
-            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                # Generate responses for the prompts in the batch
-                generated_ids = self.fsdp_model.generate(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask'],
-                    position_ids=batch['position_ids'],
-                    use_cache=False,
-                    max_new_tokens=400,
-                    do_sample=True,
-                    temperature=0.6,
-                    top_p=1.0,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id
-                )
-        
-        # Decode the generated text
-        generated_texts = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-
-        return
-
     def save_checkpoint(self, step):
         # save checkpoint
         from torch.distributed.fsdp import FullStateDictConfig, StateDictType
@@ -413,7 +383,7 @@ class MyFSDPSFTTrainer(object):
                         val_losses = []
                         for data in self.val_dataloader:
                             data = TensorDict(data, batch_size=self.config.data.micro_batch_size).cuda()
-                            val_loss = self.validate(data)
+                            val_loss = self.validation_step(data)
                             val_losses.append(val_loss)
                         if rank == 0:
                             val_loss = torch.mean(torch.stack(val_losses))

@@ -75,7 +75,7 @@ def compute_token_on_off_policy_loss(
         
     if loss_remove_token_mean is True:
         pg_loss = (pg_losses * eos_mask).sum() / eos_mask.shape[-1]
-        print(f'no token mean: mean normalization {eos_mask.shape[-1]}')
+        #print(f'no token mean: mean normalization {eos_mask.shape[-1]}')
     else:
         pg_loss = verl_F.masked_mean(pg_losses, eos_mask)
 

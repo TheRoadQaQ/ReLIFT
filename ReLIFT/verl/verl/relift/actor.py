@@ -92,6 +92,7 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                     self.alpha_optimizer.zero_grad()
 
                 for data in micro_batches:
+                    print("RL MICROBATCH STEP")
                     data = data.cuda()  # actor device is cpu when using offload
                     responses = data['responses']
                     response_length = responses.size(1)
@@ -251,6 +252,8 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                         'actor/sft_loss': sft_loss.detach().item()
                     }
                     append_to_dict(metrics, data)
+
+                    del loss, sft_loss, entropy_loss, entropy, log_prob
 
                 grad_norm = self._sft_optimizer_step()
                 data = {'actor/sft_grad_norm': grad_norm.detach().item()}
