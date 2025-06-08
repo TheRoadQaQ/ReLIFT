@@ -489,9 +489,6 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
                         advantages = batch.batch['advantages']
                         batch.batch['advantages'] = advantages
                     
-                    #if self.config.trainer.debug is True:
-                    #    breakpoint()
-                    
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
                     # Please take care when you implement group based adv computation such as GRPO and rloo

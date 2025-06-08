@@ -179,15 +179,15 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                     loss.backward()
 
                     data = {
-                        'actor/entropy_loss': entropy_loss.detach().item(),
-                        'actor/pg_loss': pg_loss.detach().item(),
-                        'actor/pg_clipfrac': pg_clipfrac.detach().item(),
-                        'actor/ppo_kl': ppo_kl.detach().item(),
+                        'actor/entropy_loss': float(entropy_loss.detach().item()),
+                        'actor/pg_loss': float(pg_loss.detach().item()),
+                        'actor/pg_clipfrac': float(pg_clipfrac.detach().item()),
+                        'actor/ppo_kl': float(ppo_kl.detach().item()),
                     }
                     append_to_dict(metrics, data)
 
                 grad_norm = self._optimizer_step()
-                data = {'actor/grad_norm': grad_norm.detach().item()}
+                data = {'actor/grad_norm': float(grad_norm.detach().item())}
                 append_to_dict(metrics, data)
         self.actor_optimizer.zero_grad()
         if self.alpha_optimizer is not None:
@@ -248,15 +248,15 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                     loss.backward()
 
                     data = {
-                        'actor/sft_entropy_loss': entropy_loss.detach().item(),
-                        'actor/sft_loss': sft_loss.detach().item()
+                        'actor/sft_entropy_loss': float(entropy_loss.detach().item()),
+                        'actor/sft_loss': float(sft_loss.detach().item())
                     }
                     append_to_dict(metrics, data)
 
-                    del loss, sft_loss, entropy_loss, entropy, log_prob
+                    #del loss, sft_loss, entropy_loss, entropy, log_prob
 
                 grad_norm = self._sft_optimizer_step()
-                data = {'actor/sft_grad_norm': grad_norm.detach().item()}
+                data = {'actor/sft_grad_norm': float(grad_norm.detach().item())}
                 append_to_dict(metrics, data)
         self.actor_sft_optimizer.zero_grad()
         
