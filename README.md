@@ -48,13 +48,11 @@ ReLIFT, a training method that interleaves RL with online FT, achieving superior
 ![overview](./figures/luffy_performance.jpg)
 
 ### Key Highlights:
-- **RL interleaved with Fine-Tuning:** interleaves RL with online FT to learn what RL can't.
-- **Online Fine-Tuning:** only learn what RL can't, need only 13% demonstrations.
-- **Good Performance:** achieves superior performance and efficiency compared to using RL or SFT alone.
+- **RL Interleaved with Fine-Tuning:** Combines RL with online fine-tuning, enabling the model to learn aspects that RL alone cannot capture.
+- **Efficient Online Fine-Tuning:** Requires only 13% of demonstration data, focusing exclusively on areas where RL falls short.
+- **Superior Performance:** Achieves better performance and efficiency compared to using RL or SFT alone.
 
 ---
-
-
 
 # 🔧Usage
 
@@ -70,9 +68,9 @@ python prepare_train.py
 We provide three example script to train. You can run the following command to train ReLIFT for different base models:
 
 ```bash
-  sh ./exp_scripts/train.sh
-  sh ./exp_scripts/train.sh
-  sh ./exp_scripts/train.sh
+  sh ./exp_scripts/qwen-7b/train.sh
+  sh ./exp_scripts/qwen-math-1.5b/train.sh
+  sh ./exp_scripts/qwen-math-7b/train.sh
 ```
 
 ## Inference
@@ -112,4 +110,9 @@ print(outputs[0].outputs[0].text)
 | RoadQAQ/ReLIFT-Qwen2.5-7B-Zero | https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero | Qwen2.5-7B |
 
 ---
+
+# 🌻Acknowledgement
+
+ReLIFT builds upon [LUFFY](https://github.com/ElliottYan/LUFFY), [veRL](https://github.com/volcengine/verl) and [deepscaler](https://github.com/agentica-project/rllm), and utilizes [vLLM](https://github.com/vllm-project/vllm) for inference. We utilize [Math-Verify](https://github.com/huggingface/Math-Verify) for math reasoning evaluation. We thank the open-source community for codes, datasets and backbones, including [LUFFY](https://github.com/ElliottYan/LUFFY), [veRL](https://github.com/volcengine/verl) and [deepscaler](https://github.com/agentica-project/rllm), [NuminaMath](https://huggingface.co/datasets/AI-MO/NuminaMath-CoT), [OpenR1-Math-220k](https://huggingface.co/datasets/open-r1/OpenR1-Math-220k), [Qwen2.5-Math](https://github.com/QwenLM/Qwen2.5-Math), and [DeepSeek-R1](https://github.com/deepseek-ai/deepseek-r1) model. 
+
 
