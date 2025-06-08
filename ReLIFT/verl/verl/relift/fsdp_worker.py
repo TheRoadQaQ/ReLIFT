@@ -75,6 +75,9 @@ class ReLIFTActorRolloutRefWorker(Worker):
         self._is_offload_param = False
         self._is_offload_grad = False
         self._is_offload_optimizer = False
+        
+        self._is_offload_sft_param = False
+        self._is_offload_sft_grad = False
         self._is_offload_sft_optimizer = False
 
         if self._is_actor:
@@ -248,10 +251,8 @@ class ReLIFTActorRolloutRefWorker(Worker):
             actor_lr_scheduler = get_constant_schedule_with_warmup(optimizer=actor_optimizer,
                                                                    num_warmup_steps=num_warmup_steps)
 
-            if optim_config.sft.get("same_or_not", True):
-                actor_sft_optimizer = actor_optimizer
-            else:
-                actor_sft_optimizer = optim.AdamW(actor_module_fsdp.parameters(),
+            
+            actor_sft_optimizer = optim.AdamW(actor_module_fsdp.parameters(),
                                           lr=optim_config.sft.lr,
                                           betas=optim_config.get('betas', (0.9, 0.999)),
                                           weight_decay=optim_config.get('weight_decay', 1e-2))
@@ -259,6 +260,7 @@ class ReLIFTActorRolloutRefWorker(Worker):
         else:
             actor_optimizer = None
             actor_lr_scheduler = None
+            actor_sft_optimizer = None
 
         log_gpu_memory_usage('After actor optimizer init', logger=logger)
 
