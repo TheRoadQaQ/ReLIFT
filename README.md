@@ -45,7 +45,7 @@ This repository includes:
 
 ReLIFT, a training method that interleaves RL with online FT, achieving superior performance and efficiency compared to using RL or SFT alone.
 
-![overview](./figures/luffy_performance.jpg)
+![overview](./figures/framework.png)
 
 ### Key Highlights:
 - **RL Interleaved with Fine-Tuning:** Combines RL with online fine-tuning, enabling the model to learn aspects that RL alone cannot capture.
