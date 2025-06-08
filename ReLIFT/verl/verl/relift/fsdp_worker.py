@@ -348,8 +348,8 @@ class ReLIFTActorRolloutRefWorker(Worker):
             OmegaConf.set_struct(self.config.actor, True)
             with open_dict(self.config.actor):
                 self.config.actor.use_remove_padding = use_remove_padding
-            from .actor import MIXDataParallelPPOActor
-            self.actor = MIXDataParallelPPOActor(config=self.config.actor,
+            from .actor import ReLIFTDataParallelPPOActor
+            self.actor = ReLIFTDataParallelPPOActor(config=self.config.actor,
                                               actor_module=self.actor_module_fsdp,
                                               actor_optimizer=self.actor_optimizer,
                                               actor_sft_optimizer=self.actor_sft_optimizer

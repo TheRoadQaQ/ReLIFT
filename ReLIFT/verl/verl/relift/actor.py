@@ -30,11 +30,11 @@ from verl.utils.torch_functional import masked_mean
 from verl.utils.seqlen_balancing import rearrange_micro_batches
 import verl.utils.torch_functional as verl_F
 
-__all__ = ['MIXDataParallelPPOActor']
+__all__ = ['ReLIFTDataParallelPPOActor']
 
 from verl.workers.actor.dp_actor import DataParallelPPOActor
 
-class MIXDataParallelPPOActor(DataParallelPPOActor):
+class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
     def __init__(
         self,
         config,
