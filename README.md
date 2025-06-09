@@ -1,9 +1,6 @@
-<h1 align="center"> Learning What Reinforcement Learning Can't: Interleaved Online Fine-Tuning for hardest Questions </h1>
+<h1 align="center"> Learning What Reinforcement Learning Can't</h1>
 
 <h5 align="center"> If you like our project, please give us a star ⭐ on GitHub for the latest update.</h5>
-
-# Overview
-Official Repository of "Learning what reinforcement learning can't", which introduces ReLIFT, a training method that interleaves RL with online FT, achieving superior performance and efficiency compared to using RL or SFT alone.
 
 # Links
 
