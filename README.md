@@ -35,8 +35,8 @@ pip install flash_attn-2.7.3+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.
 This repository includes:
 
 - `ReLIFT`: Codes for training ReLIFT, interleaved with fine-tuning for hardest questions. Our main code changes are in ReLIFT/verl/verl/relift.
-- `dataset`: Dataset for training and evaluating LUFFY. 
-- `examples`: Example script to train LUFFY.
+- `dataset`: Dataset for training and evaluating ReLIFT. 
+- `examples`: Example script to train ReLIFT.
 - `eval_scripts`: Evaluation scripts.
 
 ---
@@ -84,6 +84,14 @@ If you want to train on multi nodes, you can run the following command:
   sh ./examples/math-7b/train_two_nodes.sh #on master node
 ```
 
+## Evaluation
+We provide scripts to evalute. You can evaluate using the following command:
+
+```bash
+  sh ./eval_scripts/inference.sh
+```
+
+
 ## Inference
 
 Here’s an example of using ReLIFT for inference:
@@ -117,7 +125,7 @@ print(outputs[0].outputs[0].text)
 | **Model**                          | **Base Models** |
 |-----------------------------------|------------------|
 | RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero) |  Qwen2.5-Math-7B(https://huggingface.co/RoadQAQ/Qwen2.5-Math-7B-16k-think) |
-| RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B(https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-think) |
+| RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B(https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-16k-think) |
 | RoadQAQ/ReLIFT-Qwen2.5-7B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero) | Qwen2.5-7B(https://huggingface.co/RoadQAQ/Qwen2.5-7B-think) |
 
 ---
