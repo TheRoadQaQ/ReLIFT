@@ -1,14 +1,14 @@
 # ReLIFT
 Official Repository of "Learning what reinforcement learning can't"
 
-# 🔗Links
+# Links
 
 - 📜 [Paper (arXiv)]()  
 - 🤗 [HuggingFace Collection](https://huggingface.co/collections/RoadQAQ/relift-684535e199a909cad16d8b05)
 
 ---
 
-# ✨Getting Started
+# Getting Started
 
 ## Installation
 
@@ -36,7 +36,7 @@ This repository includes:
 
 - `ReLIFT`: Codes for training ReLIFT, interleaved with fine-tuning for hardest questions. Our main code changes are in ReLIFT/verl/verl/relift.
 - `dataset`: Dataset for training and evaluating LUFFY. 
-- `exp_scripts`: Example script to train LUFFY.
+- `examples`: Example script to train LUFFY.
 - `eval_scripts`: Evaluation scripts.
 
 ---
@@ -79,9 +79,9 @@ We provide three example script to train. You can run the following command to t
 If you want to train on multi nodes, you can run the following command:
 
 ```bash
-  source ray_start.sh #on master node
-  source ray_connect.sh #on client nodes
-  sh ./examples/math-7b/train_two_nodes.sh
+  source ./examples/ray_start.sh #on master node
+  source ./examples/ray_connect.sh #on client nodes
+  sh ./examples/math-7b/train_two_nodes.sh #on master node
 ```
 
 ## Inference
@@ -114,7 +114,7 @@ print(outputs[0].outputs[0].text)
 
 ## Models
 
-| **Model**                          | **Huggingface** |
+| **Model**                          | **Base Models** |
 |-----------------------------------|------------------|
 | RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero) |  Qwen2.5-Math-7B(https://huggingface.co/RoadQAQ/Qwen2.5-Math-7B-16k-think) |
 | RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B(https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-think) |
