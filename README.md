@@ -129,6 +129,12 @@ print(outputs[0].outputs[0].text)
 | RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B(https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-16k-think) |
 | RoadQAQ/ReLIFT-Qwen2.5-7B-Zero(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero) | Qwen2.5-7B(https://huggingface.co/RoadQAQ/Qwen2.5-7B-think) |
 
+## TODO List
+- [ ] Extending to 32B model.
+- [ ] Supporting online api to generate detailed demonstrations.
+- [ ] Finding a more stable way to interleave RL with FT.
+- [ ] More results on multi-task and cross-task learning.
+
 ---
 
 # Acknowledgement
