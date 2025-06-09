@@ -28,7 +28,7 @@ for i in "${!MODEL_PATHS[@]}"; do
 
     echo "Running inference for $MODEL_NAME ..."
 
-    CUDA_VISIBLE_DEVICES=0 python generate_vllm.py \
+    CUDA_VISIBLE_DEVICES=0,1,2,3 python generate_vllm.py \
       --model_path "$MODEL_PATH" \
       --input_file "$DATA" \
       --remove_system True \
