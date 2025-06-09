@@ -59,8 +59,6 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
             
     def update_policy(self, data: DataProto):
         # make sure we are in training mode
-        self.actor_sft_optimizer.zero_grad()
-        self.actor_optimizer.zero_grad()
         self.actor_module.train()
 
         assert self.config.ppo_mini_batch_size % self.config.ppo_micro_batch_size == 0
@@ -200,8 +198,6 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
         #breakpoint()
 
         # make sure we are in training mode
-        self.actor_sft_optimizer.zero_grad()
-        self.actor_optimizer.zero_grad()
         self.actor_module.train()
 
         assert self.config.sft.sft_data_size % self.config.sft.sft_mini_batch_size == 0
@@ -225,13 +221,11 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
 
                 self.actor_sft_optimizer.zero_grad()
 
-                print(f"{len(micro_batches)} micro batches")
                 for data in micro_batches:
                     print("SFT MICROBATCH STEP")
                     data = data.cuda()  # actor device is cpu when using offload
                     responses = data['responses']
                     response_length = responses.size(1)
-                    print(f"SFT BATCHSIZE is {responses.size(0)}")
                     attention_mask = data['attention_mask']
                     response_mask = attention_mask[:, -response_length:]
 
@@ -259,8 +253,6 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                     }
                     append_to_dict(metrics, data)
 
-                    #del loss, sft_loss, entropy_loss, entropy, log_prob
-
                 grad_norm = self._sft_optimizer_step()
                 data = {'actor/sft_grad_norm': float(grad_norm.detach().item())}
                 #del grad_norm
@@ -268,7 +260,6 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                 append_to_dict(metrics, data)
                 
         self.actor_sft_optimizer.zero_grad()
-        self.actor_optimizer.zero_grad()
         
         return metrics
     

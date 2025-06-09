@@ -6,15 +6,12 @@ export VLLM_ATTENTION_BACKEND=XFORMERS
 ray stop 
 ray start --head --num-cpus=100
 
-export MODEL_PATH=/jizhicfs/hymiezhao/models/Qwen2.5-Math-7B-16k-think
+export MODEL_PATH=$MODEL_ROOT_PATH/Qwen2.5-Math-7B-16k-think
 export DATA_DIR=./dataset/
 
-export EXP_NAME=math_7b_relift_test_one_node
+export EXP_NAME=math_7b_relift_test
 export WANDB_PROJECT="ReLIFT"
 
-# actor_rollout_ref.actor.ppo_micro_batch_size=64 \
-
-# origin sft_data_size=128/sft_epochs=1/adam optimizer as grpo/grad_clip=1.0
 # Train over a single node, 8 A100-80GB GPUs.
 python3 -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.sft.sft_epochs=1 \
@@ -35,6 +32,7 @@ python3 -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.grad_clip=0.7 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=64 \
+    actor_rollout_ref.actor.ppo_micro_batch_size=64 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=32768 \
@@ -77,6 +75,4 @@ python3 -u -m verl.relift.main_ppo \
     data.shuffle=True \
     trainer.default_hdfs_dir=null \
     trainer.default_local_dir=./train_results/${WANDB_PROJECT}/${EXP_NAME} \
-    trainer.total_epochs=5
-
-#python  /jizhicfs/hymiezhao/ml/busy.py
+    trainer.total_epochs=3
