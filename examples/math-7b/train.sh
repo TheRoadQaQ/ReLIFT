@@ -17,7 +17,7 @@ python3 -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.sft.sft_epochs=1 \
     actor_rollout_ref.actor.sft.sft_data_size=128 \
     actor_rollout_ref.actor.sft.sft_mini_batch_size=128 \
-    actor_rollout_ref.actor.sft.sft_micro_batch_size=2 \
+    actor_rollout_ref.actor.sft.sft_micro_batch_size=4 \
     actor_rollout_ref.actor.sft.entropy_coeff=0.001 \
     actor_rollout_ref.actor.optim.sft.lr=1e-6 \
     algorithm.adv_estimator=grpo \
