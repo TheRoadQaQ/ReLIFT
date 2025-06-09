@@ -17,7 +17,7 @@ You can install ReLIFT dependencies by running the following commands:
 ```bash
 conda create -n relift python=3.10
 conda activate relift
-cd ReLIFT
+cd relift
 pip install -r requirements.txt
 pip install -e .
 cd verl

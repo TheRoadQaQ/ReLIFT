@@ -13,7 +13,7 @@ export EXP_NAME=math_1.5b_relift_test
 export WANDB_PROJECT="ReLIFT"
 
 # Train over a single node, 8 A100-80GB GPUs.
-python3 -u -m verl.relift.main_ppo \
+python -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.sft.sft_epochs=1 \
     actor_rollout_ref.actor.sft.sft_data_size=128 \
     actor_rollout_ref.actor.sft.sft_mini_batch_size=128 \
