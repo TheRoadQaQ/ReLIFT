@@ -123,17 +123,11 @@ print(outputs[0].outputs[0].text)
 
 ## Models
 
-| **Model**                          | **Base Models** |
-|-----------------------------------|------------------|
-| RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero
-(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero) |  Qwen2.5-Math-7B
-(https://huggingface.co/RoadQAQ/Qwen2.5-Math-7B-16k-think) |
-| RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero
-(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B
-(https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-16k-think) |
-| RoadQAQ/ReLIFT-Qwen2.5-7B-Zero
-(https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero) | Qwen2.5-7B
-(https://huggingface.co/RoadQAQ/Qwen2.5-7B-think) |
+| **Model** | **Base Models** |
+|-----------|----------------|
+| RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero  <br> [Link](https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-7B-Zero) | Qwen2.5-Math-7B  <br> [Link](https://huggingface.co/RoadQAQ/Qwen2.5-Math-7B-16k-think) |
+| RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero  <br> [Link](https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B  <br> [Link](https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-16k-think) |
+| RoadQAQ/ReLIFT-Qwen2.5-7B-Zero  <br> [Link](https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero) | Qwen2.5-7B  <br> [Link](https://huggingface.co/RoadQAQ/Qwen2.5-7B-think) |
 
 ## TODO List
 - [ ] Extending to 32B model.
