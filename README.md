@@ -41,7 +41,7 @@ This repository includes:
 
 ---
 
-# 📖Introduction
+# Introduction
 
 ReLIFT, a training method that interleaves RL with online FT, achieving superior performance and efficiency compared to using RL or SFT alone.
 
@@ -54,7 +54,7 @@ ReLIFT, a training method that interleaves RL with online FT, achieving superior
 
 ---
 
-# 🔧Usage
+# Usage
 
 ## Data Preparation
 You need to first run the data preparation script to get the training data in parquet format.
@@ -64,16 +64,24 @@ python prepare_train.py
 ```
 
 ## Model Preparation
-You need to first download RoadQAQ/Qwen2.5-Math-1.5B-16k-think, RoadQAQ/Qwen2.5-Math-7B-think, RoadQAQ/Qwen2.5-7B-think. Actually, if you think downloading is too difficult, for Qwen2.5-Math-1.5B-16k-think and Qwen2.5-Math-7B-think, change config.json and tokenizor_config.json; for Qwen2.5-7B-think, change tokenizor_config.json.
+You need to first download RoadQAQ/Qwen2.5-Math-1.5B-16k-think, RoadQAQ/Qwen2.5-Math-7B-think, RoadQAQ/Qwen2.5-7B-think. If you find downloading too difficult, you can modify the configuration files instead. For Qwen2.5-Math-1.5B-16k-think and Qwen2.5-Math-7B-think, update both config.json and tokenizer_config.json. For Qwen2.5-7B-think, only tokenizer_config.json needs to be changed.
+
 
 ## Training
-
 We provide three example script to train. You can run the following command to train ReLIFT for different base models:
 
 ```bash
-  sh ./exp_scripts/qwen-7b/train.sh
-  sh ./exp_scripts/qwen-math-1.5b/train.sh
-  sh ./exp_scripts/qwen-math-7b/train.sh
+  sh ./examples/7b/train.sh
+  sh ./examples/math-1.5b/train.sh
+  sh ./examples/math-7b/train.sh
+```
+
+If you want to train on multi nodes, you can run the following command:
+
+```bash
+  source ray_start.sh #on master node
+  source ray_connect.sh #on client nodes
+  sh ./examples/math-7b/train_two_nodes.sh
 ```
 
 ## Inference
@@ -114,7 +122,7 @@ print(outputs[0].outputs[0].text)
 
 ---
 
-# 🌻Acknowledgement
+# Acknowledgement
 
 ReLIFT builds upon [LUFFY](https://github.com/ElliottYan/LUFFY), [veRL](https://github.com/volcengine/verl), [deepscaler](https://github.com/agentica-project/rllm), and utilizes [vLLM](https://github.com/vllm-project/vllm) for inference. We utilize [Math-Verify](https://github.com/huggingface/Math-Verify) for math reasoning evaluation. We thank the open-source community for codes, datasets and backbones, including [LUFFY](https://github.com/ElliottYan/LUFFY), [veRL](https://github.com/volcengine/verl), [deepscaler](https://github.com/agentica-project/rllm), [NuminaMath](https://huggingface.co/datasets/AI-MO/NuminaMath-CoT), [OpenR1-Math-220k](https://huggingface.co/datasets/open-r1/OpenR1-Math-220k), [Qwen2.5-Math](https://github.com/QwenLM/Qwen2.5-Math), and [DeepSeek-R1](https://github.com/deepseek-ai/deepseek-r1) model. 
 
