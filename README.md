@@ -4,7 +4,7 @@
 
 # Links
 
-- 📜 [Paper (arXiv)]()  
+- 📜 [Paper (arXiv)](https://arxiv.org/pdf/2506.07527)  
 - 🤗 [HuggingFace Collection](https://huggingface.co/collections/RoadQAQ/relift-684535e199a909cad16d8b05)
 
 ---
@@ -129,11 +129,12 @@ print(outputs[0].outputs[0].text)
 | RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero  [Link](https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-Math-1.5B-Zero) | Qwen2.5-Math-1.5B  [Link](https://huggingface.co/RoadQAQ/Qwen2.5-Math-1.5B-16k-think) |
 | RoadQAQ/ReLIFT-Qwen2.5-7B-Zero  [Link](https://huggingface.co/RoadQAQ/ReLIFT-Qwen2.5-7B-Zero) | Qwen2.5-7B  [Link](https://huggingface.co/RoadQAQ/Qwen2.5-7B-think) |
 
-## TODO List
+## Todo List
 - [ ] Extending to 32B model.
-- [ ] Supporting online api to generate detailed demonstrations.
+- [ ] Supporting api to generate detailed demonstrations.
 - [ ] Finding a more stable way to interleave RL with FT.
 - [ ] More results on multi-task and cross-task learning.
+- [ ] Proof.
 
 ---
 
