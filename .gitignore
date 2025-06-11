@@ -6,3 +6,4 @@
 /outputs/**
 /wandb/**
 /train_results/**
+/dataset/train_data/**
