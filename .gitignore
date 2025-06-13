@@ -7,3 +7,5 @@
 /wandb/**
 /train_results/**
 /dataset/train_data/**
+/eval_scripts/inference/**
+
