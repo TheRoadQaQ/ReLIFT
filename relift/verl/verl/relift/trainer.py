@@ -332,12 +332,11 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
         self.global_steps += 1
 
         n_samples = self.config.actor_rollout_ref.rollout.n
-        sft_buffer_batch = None
-
         batch_size = self.config.data.train_batch_size
-        n_samples = self.config.actor_rollout_ref.rollout.n
 
         #breakpoint()
+        sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
+        sft_buffer_batch = None
 
         for _ in range(self.config.trainer.total_epochs):
             
@@ -444,7 +443,7 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
                                 buffer_indexes.append(i * n_samples)
 
                         # update sft_buffer_batch
-                        if buffer_indexes:
+                        if sft_data_size != -1 and buffer_indexes:
                             buffer_batch = batch.slice(buffer_indexes)
                             
                             if sft_buffer_batch is not None:
@@ -513,8 +512,7 @@ class ReLIFTRayPPOTrainer(RayPPOTrainer):
                         metrics.update(actor_output_metrics)
                     
                     # SFT update using hard-batch
-                    sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
-                    if len(sft_buffer_batch) >= sft_data_size:
+                    if sft_data_size != -1 and len(sft_buffer_batch) >= sft_data_size:
                         with _timer('sft_update_actor', timing_raw):
                             sft_buffer_batch.to('cpu')
                             sft_buffer_batch.batch.to('cpu')
