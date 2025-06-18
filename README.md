@@ -136,7 +136,17 @@ print(outputs[0].outputs[0].text)
 - [ ] More results on multi-task and cross-task learning.
 - [ ] Proof.
 
----
+## 📖 Citation
+
+If you find this work helpful, please cite our paper:
+```bibtex
+@article{ma2025learning,
+  title={Learning What Reinforcement Learning Can't: Interleaved Online Fine-Tuning for Hardest Questions},
+  author={Ma, Lu and Liang, Hao and Qiang, Meiyi and Tang, Lexiang and Ma, Xiaochen and Wong, Zhen Hao and Niu, Junbo and Shen, Chengyu and He, Runming and Cui, Bin and others},
+  journal={arXiv preprint arXiv:2506.07527},
+  year={2025}
+}
+```
 
 # Acknowledgement
 
