@@ -115,11 +115,15 @@ class RLHFDatasetWithTarget(RLHFDataset):
         tgt = row_dict.pop(self.target_key)
         
         if tgt is not None:
-            tgt = tgt[0]
+            if not isinstance(tgt, str):
+                tgt = tgt[0]['content']
+            else:
+                tgt = tgt
         
-            if prompt_with_chat_template.endswith('<think>\n') and tgt['content'].startswith('<think>\n'):
-                tgt['content'] = tgt['content'][len('<think>\n'):]
-            tgt_input_ids = self.tokenizer(tgt['content'], add_special_tokens=False, return_tensors='pt')['input_ids'].reshape(-1) # [1, l]
+            if prompt_with_chat_template.endswith('<think>\n') and tgt.startswith('<think>\n'):
+                tgt = tgt[len('<think>\n'):]
+                
+            tgt_input_ids = self.tokenizer(tgt, add_special_tokens=False, return_tensors='pt')['input_ids'].reshape(-1) # [1, l]
             tgt_input_ids = tgt_input_ids.reshape(1, -1)
         else:
             tgt_input_ids = torch.tensor([], dtype=torch.long).reshape(1, 0) # empty target, will be pad to max_target_length
@@ -149,30 +153,6 @@ class RLHFDatasetWithTarget(RLHFDataset):
         row_dict["index"] = index
 
         return row_dict
-
-    def _process_target(self, tgt: str, prompt: str, add_eos=False) -> torch.Tensor:
-        if prompt.endswith('<think>\n') and tgt.startswith('<think>\n'):
-            tgt = tgt[len('<think>\n'):]
-        tgt_input_ids = self.tokenizer(tgt, add_special_tokens=False, return_tensors='pt')['input_ids'].reshape(-1) # [1, l]
-        if add_eos:
-            tgt_input_ids = torch.cat([tgt_input_ids, torch.tensor([self.tokenizer.eos_token_id], device=tgt_input_ids.device, dtype=tgt_input_ids.dtype).reshape(-1)])
-
-        tgt_input_ids = tgt_input_ids.reshape(1, -1)
-        # padding or truncate
-        sequence_length = tgt_input_ids.shape[-1]
-        if sequence_length < self.max_target_length:
-            # right pad for tgt_input_ids
-            tgt_input_ids = pad_sequence_to_length(tgt_input_ids,
-                                            max_seq_len=self.max_target_length,
-                                            pad_token_id=self.tokenizer.pad_token_id,
-                                            left_pad=False)
-        else:
-            assert self.truncation in ('right', 'error')
-            tgt_input_ids = tgt_input_ids[:, :self.max_target_length]
-        
-        tgt_input_ids = tgt_input_ids.squeeze(0)
-
-        return tgt_input_ids
 
 from verl import DataProto
 class BufferedDataLoader:

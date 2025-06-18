@@ -107,8 +107,8 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature)
 
                     
-                    from .core_alg import compute_token_on_off_policy_loss
-                    loss_fn = compute_token_on_off_policy_loss
+                    from .core_algos import compute_policy_loss
+                    loss_fn = compute_policy_loss
 
                     ret_dict = loss_fn(
                         old_log_prob=old_log_prob, 
@@ -116,8 +116,6 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
                         advantages=advantages,
                         eos_mask=response_mask,
                         cliprange=clip_ratio,
-                        clip_upper_bound=self.config.clip_upper_bound,
-                        all_max_clip=self.config.all_max_clip if self.config.all_max_clip != -1 else None,
                         loss_remove_token_mean=self.config.loss_remove_token_mean,
                         loss_remove_clip=self.config.loss_remove_clip
                     )
@@ -233,7 +231,7 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
 
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=1.0)
 
-                    from .core_alg import compute_sft_loss
+                    from .core_algos import compute_sft_loss
                     loss_fn = compute_sft_loss
                     ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask)
                     sft_loss = ret_dict["sft_loss"]
@@ -264,12 +262,12 @@ class ReLIFTDataParallelPPOActor(DataParallelPPOActor):
         return metrics
     
     def _sft_optimizer_step(self):
-        assert self.config.grad_clip is not None
+        assert self.config.sft.sft_grad_clip is not None
 
         if isinstance(self.actor_module, FSDP):
-            grad_norm = self.actor_module.clip_grad_norm_(max_norm=self.config.grad_clip)
+            grad_norm = self.actor_module.clip_grad_norm_(max_norm=self.config.sft.sft_grad_clip)
         else:
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.sft_grad_clip)
         self.actor_sft_optimizer.step()
         
         return grad_norm
