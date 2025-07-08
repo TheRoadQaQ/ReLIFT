@@ -8,3 +8,4 @@
 /train_results/**
 /dataset/train_data/**
 /dataset/test_data/**
+/eval_scripts/private/**
