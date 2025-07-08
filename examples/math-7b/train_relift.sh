@@ -1,12 +1,12 @@
 set -x
 
 # Set XFormers backend to avoid CUDA errors
-export VLLM_ATTENTION_BACKEND=XFORMERS
+# export VLLM_ATTENTION_BACKEND=XFORMERS
 
-/jizhicfs/yuqinhan/qinhan_conda/envs/ml_relift/bin/ray stop 
-/jizhicfs/yuqinhan/qinhan_conda/envs/ml_relift/bin/ray start --head --num-cpus=50
+ray stop 
+ray start --head --num-cpus=50
 
-export MODEL_PATH=/jizhicfs/hymiezhao/models/Qwen2.5-Math-7B
+export MODEL_PATH=$MODEL_ROOT/Qwen2.5-Math-7B
 export DATA_DIR=./dataset
 
 export EXP_NAME=math_7b_relift
@@ -22,8 +22,8 @@ python -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.sft.grad_clip=0.5 \
     actor_rollout_ref.actor.optim.sft.lr=1e-6 \
     algorithm.adv_estimator=grpo \
-    data.train_files=$DATA_DIR/openr1.parquet \
-    data.val_files=$DATA_DIR/valid.parquet \
+    data.train_files=$DATA_DIR/train_data/openr1.parquet \
+    data.val_files=$DATA_DIR/test_data/valid.parquet \
     data.truncation='left' \
     data.train_batch_size=128 \
     data.val_batch_size=512 \
@@ -56,7 +56,7 @@ python -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.fsdp_config.sft_param_offload=False \
     actor_rollout_ref.actor.fsdp_config.sft_optimizer_offload=True \
     +actor_rollout_ref.actor.fsdp_config.sft_use_lora=False \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
@@ -84,7 +84,7 @@ python -u -m verl.relift.main_ppo \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=20 \
+    trainer.test_freq=10 \
     algorithm.norm_adv_by_std_in_grpo=False \
     data.shuffle=True \
     trainer.default_hdfs_dir=null \

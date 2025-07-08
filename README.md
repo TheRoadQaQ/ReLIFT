@@ -23,17 +23,6 @@ cd verl
 pip install -e .[vllm]
 ```
 
-```bash
-conda create -n relift python=3.10
-conda activate relift
-cd relift
-pip install -r requirements.txt
-pip install -e .
-cd verl
-pip install -e .
-pip install flash_attn==2.7.3
-```
-
 If you encounter issues when installing flash-attn, we recommend you to install it here 
 [flash-attn](https://github.com/Dao-AILab/flash-attention/releases/tag/v2.7.3). For example, we use this version. 
 ```bash
@@ -141,7 +130,6 @@ print(outputs[0].outputs[0].text)
 
 ## Todo List
 - [ ] Extending to 32B model.
-- [ ] Supporting api to generate detailed demonstrations.
 - [ ] Finding a more stable way to interleave RL with FT.
 - [ ] More results on multi-task and cross-task learning.
 - [ ] Proof.
