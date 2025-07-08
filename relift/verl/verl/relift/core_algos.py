@@ -46,21 +46,16 @@ def compute_sft_loss_v3(log_prob, eos_mask, entropy):
     }  
 
 # only update tokens with lower entropy
-def compute_sft_loss_v4(log_prob, eos_mask, entropy, ratio=0.5):
+def compute_sft_loss_v4(log_prob, eos_mask, entropy, ratio=0.2):
     sft_losses = -1 * log_prob
 
-    # 只选取entropy最小的前20% token
-    # entropy: (batch, seq_len)
-    # 先把eos_mask为False的地方设为无穷大，避免pad token被选中
     masked_entropy = entropy.clone()
     masked_entropy[~eos_mask] = float('inf')
 
-    # 展平，方便排序
     flat_entropy = masked_entropy.view(-1)
     num_valid = eos_mask.sum().item()
     k = max(1, int(num_valid * ratio))  # 至少选1个
 
-    # 找到前k小的entropy的阈值
     topk_entropy, _ = torch.topk(flat_entropy, k, largest=False)
     threshold = topk_entropy[-1]
 
@@ -77,23 +72,18 @@ def compute_sft_loss_v4(log_prob, eos_mask, entropy, ratio=0.5):
 def compute_sft_loss_v5(log_prob, eos_mask, entropy, ratio=0.2):
     sft_losses = -1 * log_prob
 
-    # 先把eos_mask为False的地方设为无穷小，避免pad token被选中
     masked_entropy = entropy.clone()
     masked_entropy[~eos_mask] = float('-inf')
 
-    # 展平，方便排序
     flat_entropy = masked_entropy.view(-1)
     num_valid = eos_mask.sum().item()
     k = max(1, int(num_valid * ratio))  # 至少选1个
 
-    # 找到前k大的entropy的阈值
     topk_entropy, _ = torch.topk(flat_entropy, k, largest=True)
     threshold = topk_entropy[-1]
 
-    # 构造mask: 只有entropy >= threshold的位置为True
     selected_mask = (masked_entropy >= threshold) & eos_mask
 
-    # 只对selected_mask为True的位置计算loss
     sft_loss = verl_F.masked_mean(sft_losses, selected_mask)
     return {
         "sft_loss": sft_loss,
@@ -108,18 +98,14 @@ def compute_sft_loss_v6(log_prob, eos_mask, entropy, low_ratio=0.25, high_ratio=
     if num_valid == 0:
         return {"sft_loss": torch.tensor(0.0, device=log_prob.device)}
 
-    # 计算分位数对应的k
     k_low = max(1, int(num_valid * low_ratio))
     k_high = max(1, int(num_valid * high_ratio))
 
-    # 用topk找分位数阈值
     threshold_low = torch.topk(valid_entropy, k_low, largest=False)[-1]
     threshold_high = torch.topk(valid_entropy, k_high, largest=False)[-1]
 
-    # 构造mask: 只选取25%~75%分位数之间的token，并且是有效token
     selected_mask = (entropy > threshold_low) & (entropy <= threshold_high) & eos_mask  # [batch, seq_len]
 
-    # 只对selected_mask为True的位置计算loss
     sft_loss = masked_mean(sft_losses, selected_mask)
     return {
         "sft_loss": sft_loss,
