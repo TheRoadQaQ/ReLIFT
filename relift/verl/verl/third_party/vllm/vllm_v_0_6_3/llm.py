@@ -13,16 +13,17 @@
 # limitations under the License.
 # Adapted from https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/llm.py
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 from transformers import PretrainedConfig, PreTrainedTokenizer, PreTrainedTokenizerFast
-from verl.workers.rollout.tokenizer import HybridEngineBaseTokenizer
 from vllm import LLM
 from vllm.outputs import EmbeddingRequestOutput, RequestOutput
 from vllm.utils import Counter
+
+from verl.workers.rollout.tokenizer import HybridEngineBaseTokenizer
 
 from .arg_utils import EngineArgs
 from .llm_engine_sp import LLMEngine
@@ -97,7 +98,7 @@ class LLM(LLM):
         tokenizer_revision: Optional[str] = None,
         seed: int = 0,
         gpu_memory_utilization: float = 0.9,
-        swap_space: int = 16,
+        swap_space: int = 4,
         cpu_offload_gb: float = 0,
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
@@ -111,7 +112,6 @@ class LLM(LLM):
         removed_vision_keys = ("image_token_id", "image_feature_size", "image_input_shape", "image_input_type")
         if any(k in kwargs for k in removed_vision_keys):
             raise TypeError("There is no need to pass vision-related arguments anymore.")
-        
         engine_args = EngineArgs(
             model_hf_config=model_hf_config,
             # tokenizer=tokenizer,
@@ -132,18 +132,11 @@ class LLM(LLM):
             max_seq_len_to_capture=max_seq_len_to_capture,
             disable_custom_all_reduce=disable_custom_all_reduce,
             load_format=load_format,
-            # enable_chunked_prefill=False,
-            # num_scheduler_steps=40,
-            # max_num_seqs=256,
-            # max_num_batched_tokens=2**16,
             **kwargs,
         )
         tokenizer_cls = (PreTrainedTokenizer, PreTrainedTokenizerFast, HybridEngineBaseTokenizer)
         if not isinstance(tokenizer, tokenizer_cls):
-            raise ValueError(
-                f"Unexpected tokenizer type: {type(tokenizer)}. Must be"
-                "one of the following: PreTrainedTokenizer, PreTrainedTokenizerFast, verl.workers.rollout.HybridEngineBaseTokenizer"
-            )
+            raise ValueError(f"Unexpected tokenizer type: {type(tokenizer)}. Must beone of the following: PreTrainedTokenizer, PreTrainedTokenizerFast, verl.workers.rollout.HybridEngineBaseTokenizer")
         self.llm_engine = LLMEngine.from_engine_args(model, tokenizer, engine_args)  # TODO: check usagecontext
         self.request_counter = Counter()
 
@@ -191,14 +184,13 @@ class LLM(LLM):
                         logprob.append(logprobs_dict[id].logprob)
                     logprobs.append(torch.tensor(logprob))
 
-        pad_token_id = (self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None
-                        else self.llm_engine.tokenizer.eos_token_id)
+        pad_token_id = self.llm_engine.tokenizer.pad_token_id if self.llm_engine.tokenizer.pad_token_id is not None else self.llm_engine.tokenizer.eos_token_id
         output_token_ids = pad_sequence(output_token_ids, batch_first=True, padding_value=pad_token_id)
         if len(logprobs) > 0:
             logprobs = pad_sequence(logprobs, batch_first=True, padding_value=pad_token_id)
         return output_token_ids, logprobs
 
-    def sync_model_weights(self, actor_weights: Dict[str, torch.Tensor], load_format: str) -> None:
+    def sync_model_weights(self, actor_weights: Iterable, load_format: str) -> None:
         self.llm_engine.sync_model_weights(actor_weights=actor_weights, load_format=load_format)
 
     def offload_model_weights(self) -> None:

@@ -14,7 +14,7 @@
 
 from omegaconf import ListConfig
 import os
-from typing import List, Union
+from typing import List, Union, Optional
 
 import pandas as pd
 import copy 
@@ -22,7 +22,7 @@ import copy
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer, ProcessorMixin
 from verl.utils.fs import copy_local_path_from_hdfs
 
 from verl.utils.model import compute_position_id_with_mask
@@ -64,6 +64,8 @@ def collate_fn(data_list: list[dict]) -> dict:
 
 from verl.utils.dataset.rl_dataset import RLHFDataset
 
+from omegaconf import DictConfig, ListConfig
+
 class RLHFDatasetWithTarget(RLHFDataset):
     """
     We assume the dataset contains a column that contains prompts and other information
@@ -72,57 +74,80 @@ class RLHFDatasetWithTarget(RLHFDataset):
     def __init__(self,
                  parquet_files: Union[str, List[str]],
                  tokenizer: PreTrainedTokenizer,
-                 prompt_key='prompt',
-                 max_prompt_length=1024,
-                 filter_prompts=True,
-                 cache_dir='~/.cache/verl/rlhf',
-                 chat_template_func=None,
-                 return_raw_chat=False,
-                 truncation='error',
-                 target_key='target',
-                 max_target_length=8192):
-        super().__init__(parquet_files, tokenizer, prompt_key, max_prompt_length, filter_prompts, cache_dir, chat_template_func, return_raw_chat, truncation)
+                 config: DictConfig,
+                 processor: Optional[ProcessorMixin] = None):
+        super().__init__(parquet_files, tokenizer, config)
         
-        self.max_target_length = max_target_length
-        self.target_key = target_key
+        self.max_target_length = config.max_target_length
+        self.target_key = config.target_key
 
         # add unique_id
-        self.dataframe['sample_id'] = self.dataframe.index
+        self.dataframe = self.dataframe.map(lambda example, idx: {"sample_id": idx}, with_indices=True)
 
     def __getitem__(self, item):
         """
         Note that we also return the raw_input_ids so that it can be combined with other chat template
         """
-        row_dict = self.dataframe.iloc[item].to_dict()
+        row_dict: dict = self.dataframe[item]
+        messages = self._build_messages(row_dict)
+        model_inputs = {}
 
-        chat = row_dict.pop(self.prompt_key)
+        raw_prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        model_inputs = self.tokenizer(raw_prompt, return_tensors="pt", add_special_tokens=False)
+        input_ids = model_inputs.pop("input_ids")
+        attention_mask = model_inputs.pop("attention_mask")
 
-        prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
-
-        input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(prompt=prompt_with_chat_template,
-                                                                         tokenizer=self.tokenizer,
-                                                                         max_length=self.max_prompt_length,
-                                                                         pad_token_id=self.tokenizer.pad_token_id,
-                                                                         left_pad=True,
-                                                                         truncation=self.truncation)
+        input_ids, attention_mask = verl_F.postprocess_data(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_length=self.max_prompt_length,
+            pad_token_id=self.tokenizer.pad_token_id,
+            left_pad=True,
+            truncation=self.truncation,
+        )
 
         position_ids = compute_position_id_with_mask(attention_mask)
 
-        row_dict['input_ids'] = input_ids[0]
-        row_dict['attention_mask'] = attention_mask[0]
-        row_dict['position_ids'] = position_ids[0]
-        
+        row_dict["input_ids"] = input_ids[0]
+        row_dict["attention_mask"] = attention_mask[0]
+        row_dict["position_ids"] = position_ids[0]
+
+        raw_prompt_ids = self.tokenizer.encode(raw_prompt, add_special_tokens=False)
+        if len(raw_prompt_ids) > self.max_prompt_length:
+            if self.truncation == "left":
+                raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length :]
+            elif self.truncation == "right":
+                raw_prompt_ids = raw_prompt_ids[: self.max_prompt_length]
+            elif self.truncation == "middle":
+                left_half = self.max_prompt_length // 2
+                right_half = self.max_prompt_length - left_half
+                raw_prompt_ids = raw_prompt_ids[:left_half] + raw_prompt_ids[-right_half:]
+            elif self.truncation == "error":
+                raise RuntimeError(f"Prompt length {len(raw_prompt_ids)} is longer than {self.max_prompt_length}.")
+
+        row_dict["raw_prompt_ids"] = raw_prompt_ids
+
+        # add index for each prompt
+        index = row_dict.get("extra_info", {}).get("index", 0)
+        tools_kwargs = row_dict.get("extra_info", {}).get("tools_kwargs", {})
+        need_tools_kwargs = row_dict.get("extra_info", {}).get("need_tools_kwargs", self.need_tools_kwargs)
+        if need_tools_kwargs and not tools_kwargs:
+            logger.warning("tools_kwargs is empty for index {}, data source: {}", index, row_dict["data_source"])
+        row_dict["index"] = index
+        row_dict["tools_kwargs"] = tools_kwargs
+
         tgt = row_dict.pop(self.target_key)
-        
         if tgt is not None:
-            if not isinstance(tgt, str):
-                tgt = tgt[0]['content']
-            else:
-                tgt = tgt
-        
-            if prompt_with_chat_template.endswith('<think>\n') and tgt.startswith('<think>\n'):
+            tgt = tgt[0]
+            if isinstance(tgt, dict):
+                tgt = tgt['content']
+
+            if not tgt.startswith('<think>\n'):
+                tgt = '<think>\n' + tgt
+
+            if raw_prompt.endswith('<think>\n') and tgt.startswith('<think>\n'):
                 tgt = tgt[len('<think>\n'):]
-                
+
             tgt_input_ids = self.tokenizer(tgt, add_special_tokens=False, return_tensors='pt')['input_ids'].reshape(-1) # [1, l]
             tgt_input_ids = tgt_input_ids.reshape(1, -1)
         else:
@@ -137,22 +162,36 @@ class RLHFDatasetWithTarget(RLHFDataset):
                                             pad_token_id=self.tokenizer.pad_token_id,
                                             left_pad=False)
         else:
+            tgt_input_ids = tgt_input_ids[:, :self.max_target_length]
+        
+        tgt_input_ids = tgt_input_ids.squeeze(0)
+        row_dict['tgt_input_ids'] = tgt_input_ids
+
+        return row_dict
+
+    def _process_target(self, tgt: str, prompt: str, add_eos=False) -> torch.Tensor:
+        if prompt.endswith('<think>\n') and tgt.startswith('<think>\n'):
+            tgt = tgt[len('<think>\n'):]
+        tgt_input_ids = self.tokenizer(tgt, add_special_tokens=False, return_tensors='pt')['input_ids'].reshape(-1) # [1, l]
+        if add_eos:
+            tgt_input_ids = torch.cat([tgt_input_ids, torch.tensor([self.tokenizer.eos_token_id], device=tgt_input_ids.device, dtype=tgt_input_ids.dtype).reshape(-1)])
+
+        tgt_input_ids = tgt_input_ids.reshape(1, -1)
+        # padding or truncate
+        sequence_length = tgt_input_ids.shape[-1]
+        if sequence_length < self.max_target_length:
+            # right pad for tgt_input_ids
+            tgt_input_ids = pad_sequence_to_length(tgt_input_ids,
+                                            max_seq_len=self.max_target_length,
+                                            pad_token_id=self.tokenizer.pad_token_id,
+                                            left_pad=False)
+        else:
             assert self.truncation in ('right', 'error')
             tgt_input_ids = tgt_input_ids[:, :self.max_target_length]
         
         tgt_input_ids = tgt_input_ids.squeeze(0)
 
-        row_dict['tgt_input_ids'] = tgt_input_ids
-
-        # encode prompts without chat template
-        if self.return_raw_chat:
-            row_dict['raw_prompt'] = chat.tolist()
-
-        # add index for each prompt
-        index = row_dict.get("extra_info", {}).get("index", 0)
-        row_dict["index"] = index
-
-        return row_dict
+        return tgt_input_ids
 
 from verl import DataProto
 class BufferedDataLoader:

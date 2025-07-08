@@ -5,14 +5,12 @@ setup(
     version='0.0.0',
     description='Learning What Reinforcement Learning Can Not',
     author='Lu Ma',
-    packages=find_packages(include=['deepscaler',]),
+    packages=find_packages(include=[]),
     install_requires=[
-        'google-cloud-aiplatform',
         'pylatexenc',
         'sentence_transformers',
         'tabulate',
         'math-verify[antlr4_9_3]==0.6.0',
-        'flash_attn==2.7.3',
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

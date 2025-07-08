@@ -15,233 +15,241 @@
 Note that we don't combine the main with ray_trainer as ray_trainer is used by other main.
 """
 
-from verl import DataProto
-import torch
-from verl.utils.reward_score import gsm8k, math
-
-from deepscaler.rewards.math_reward import deepscaler_reward_fn, THOUGHT_DELIMITER_END, THOUGHT_DELIMITER_START
-from typing import List, Union
-from verl.relift.reward_with_format import deepscaler_reward_fn_impl1
-from verl.relift.math_verify_reward import reward_fn_math_verify, reward_fn_math_verify_no_think
-
-def deepscaler_reward_fn_nothink(solution_str: str, ground_truth: Union[str, List[str]], enable_llm = False):
-    solution_str = f"{THOUGHT_DELIMITER_START}\n{THOUGHT_DELIMITER_END}\n{solution_str}"
-    return deepscaler_reward_fn(solution_str, ground_truth, enable_llm)
-
-def _select_rm_score_fn(data_source, reward_impl_version):
-    if data_source == 'openai/gsm8k':
-        return gsm8k.compute_score
-    elif data_source == 'lighteval/MATH':
-        return math.compute_score
-    else:
-        if reward_impl_version == 0:
-            return deepscaler_reward_fn
-        elif reward_impl_version == 1:
-            return deepscaler_reward_fn_impl1
-        elif reward_impl_version == 2:
-            return deepscaler_reward_fn_nothink
-        elif reward_impl_version == 3:
-            return reward_fn_math_verify
-        elif reward_impl_version == 4:
-            return reward_fn_math_verify_no_think
-        else:
-            raise NotImplementedError
-
-class RewardManager():
-    """The reward manager.
-    """
-
-    def __init__(self, tokenizer, num_examine, reward_impl_version) -> None:
-        self.tokenizer = tokenizer
-        self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
-        self.reward_impl_version = reward_impl_version
-
-    def __call__(self, data: DataProto):
-        """We will expand this function gradually based on the available datasets"""
-        # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
-        if 'rm_scores' in data.batch.keys():
-            return data.batch['rm_scores']
-
-        reward_tensor = torch.zeros_like(data.batch['responses'], dtype=torch.float32)
-
-        already_print_data_sources = {}
-
-        from concurrent.futures import ThreadPoolExecutor
-        from typing import Dict, Any
-        #import threading
-        # Thread-safe dict for tracking printed data sources
-        # print_lock = threading.Lock()
-        
-        def process_item(args):
-            i, data_item, already_print_data_sources = args
-            prompt_ids = data_item.batch['prompts']
-            prompt_length = prompt_ids.shape[-1]
-            
-            valid_prompt_length = data_item.batch['attention_mask'][:prompt_length].sum()
-            valid_prompt_ids = prompt_ids[-valid_prompt_length:]
-
-            response_ids = data_item.batch['responses'] 
-            valid_response_length = data_item.batch['attention_mask'][prompt_length:].sum()
-            valid_response_ids = response_ids[:valid_response_length]
-
-            # decode
-            # sequences = torch.cat((valid_prompt_ids, valid_response_ids))
-            sequences = valid_response_ids
-            sequences_str = self.tokenizer.decode(sequences)
-            # if not "no_think" in self.reward_impl_version:
-            from deepscaler.globals import THOUGHT_DELIMITER_START
-            # sequences_str = [THOUGHT_DELIMITER_START + seq.strip() for seq in sequences_str]
-            if self.reward_impl_version != 4:
-                sequences_str = THOUGHT_DELIMITER_START + '\n' + sequences_str
-            # else:
-            #     breakpoint()
-
-            ground_truth = data_item.non_tensor_batch['reward_model']['ground_truth']
-
-            # select rm_score
-            data_source = data_item.non_tensor_batch['data_source']
-            compute_score_fn = _select_rm_score_fn(data_source, reward_impl_version=self.reward_impl_version)
-            score = compute_score_fn(solution_str=sequences_str, ground_truth=ground_truth)
-            
-            # with print_lock:
-            #     if data_source not in already_print_data_sources:
-            #         already_print_data_sources[data_source] = 0
-
-            #     if already_print_data_sources[data_source] < self.num_examine:
-            #         already_print_data_sources[data_source] += 1
-            #         print(sequences_str)      
-            return i, score, valid_response_length
-
-        if self.reward_impl_version in {3, 4}:
-            args = [(i, data[i], already_print_data_sources) for i in range(len(data))]
-            results = list(process_item(args[i]) for i in range(len(args)))
-        else:
-            # Process items in parallel using ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=96) as executor:
-                args = [(i, data[i], already_print_data_sources) for i in range(len(data))]
-                results = list(executor.map(process_item, args))
-
-        # Fill reward tensor with results
-        for i, score, valid_response_length in results:
-            reward_tensor[i, valid_response_length - 1] = score
-
-        return reward_tensor
-
-
-import ray
 import hydra
+import ray
+
+from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+#from verl.trainer.ppo.reward import load_reward_manager
 
 
-@hydra.main(config_path='config', config_name='relift_trainer', version_base=None)
+@hydra.main(config_path="config", config_name="relift_trainer", version_base=None)
 def main(config):
+    run_ppo(config)
+
+
+def run_ppo(config) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         # "RAY_DEBUG": "1",
-        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
+        ray.init(
+            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN", "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "true"}},
+        )
 
-    ray.get(main_task.remote(config))
+    runner = TaskRunner.remote()
+    ray.get(runner.run.remote(config))
+    # create a timeline trace file to analyze the performance
+    timeline_json_file = config.ray_init.get("timeline_json_file", None)
+    if timeline_json_file:
+        ray.timeline(filename=timeline_json_file)
 
 
-@ray.remote
-def main_task(config):
-    from verl.utils.fs import copy_local_path_from_hdfs
-    from transformers import AutoTokenizer
+@ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
+class TaskRunner:
+    def run(self, config):
+        # print initial config
+        from pprint import pprint
 
-    # print initial config
-    from pprint import pprint
-    from omegaconf import OmegaConf
-    pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
-    OmegaConf.resolve(config)
+        from omegaconf import OmegaConf
 
-    # download the checkpoint from hdfs
-    local_path = copy_local_path_from_hdfs(config.actor_rollout_ref.model.path)
+        from verl.utils.fs import copy_to_local
 
-    # instantiate tokenizer
-    from verl.utils import hf_tokenizer
-    tokenizer = hf_tokenizer(local_path)
+        pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
+        OmegaConf.resolve(config)
 
-    # define worker classes
-    if config.actor_rollout_ref.actor.strategy == 'fsdp':
-        assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
-        from verl.workers.fsdp_workers import ActorRolloutRefWorker, CriticWorker
-        from verl.single_controller.ray import RayWorkerGroup
-        ray_worker_group_cls = RayWorkerGroup
+        # download the checkpoint from hdfs
+        local_path = copy_to_local(config.actor_rollout_ref.model.path, use_shm=config.actor_rollout_ref.model.get("use_shm", False))
 
-    elif config.actor_rollout_ref.actor.strategy == 'megatron':
-        raise NotImplementedError('megatron is not supported')
-        assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
-        from verl.workers.megatron_workers import ActorRolloutRefWorker, CriticWorker
-        from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
-        ray_worker_group_cls = NVMegatronRayWorkerGroup
+        # instantiate tokenizer
+        from verl.utils import hf_processor, hf_tokenizer
 
-    else:
-        raise NotImplementedError
+        trust_remote_code = config.data.get("trust_remote_code", False)
+        tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+        processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)  # used for multimodal LLM, could be none
 
-    from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
-    from .fsdp_worker import ReLIFTActorRolloutRefWorker
+        # vllm early verify
+        if config.actor_rollout_ref.rollout.name in ["vllm"]:
+            from verl.utils.vllm_utils import is_version_ge
 
-    global_pool_id = 'global_pool'
-    resource_pool_spec = {
-        global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
-    }
+            if config.actor_rollout_ref.model.get("lora_rank", 0) > 0:
+                if not is_version_ge(pkg="vllm", minver="0.7.3"):
+                    raise NotImplementedError("PPO LoRA is not supported before vllm 0.7.3")
 
-    if config.actor_rollout_ref.ref.use_ref:
-        role_worker_mapping = {
-            Role.ActorRollout: ray.remote(ReLIFTActorRolloutRefWorker),
-            Role.Critic: ray.remote(CriticWorker),
-            Role.RefPolicy: ray.remote(ReLIFTActorRolloutRefWorker)
-        }
-        mapping = {
-            Role.ActorRollout: global_pool_id,
-            Role.Critic: global_pool_id,
-            Role.RefPolicy: global_pool_id,
-        }
-    else:
-        role_worker_mapping = {
-            Role.ActorRollout: ray.remote(ReLIFTActorRolloutRefWorker),
-            Role.Critic: ray.remote(CriticWorker),
-        }
-        mapping = {
-            Role.ActorRollout: global_pool_id,
-            Role.Critic: global_pool_id,
-        }
+        # define worker classes
+        if config.actor_rollout_ref.actor.strategy in ["fsdp", "fsdp2"]:
+            assert config.critic.strategy in ["fsdp", "fsdp2"]
+            from verl.single_controller.ray import RayWorkerGroup
+            from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker, CriticWorker
+            from .fsdp_worker import ReLIFTActorRolloutRefWorker
 
-    # we should adopt a multi-source reward function here
-    # - for rule-based rm, we directly call a reward score
-    # - for model-based rm, we call a model
-    # - for code related prompt, we send to a sandbox if there are test cases
-    # - finally, we combine all the rewards together
-    # - The reward type depends on the tag of the data
-    if config.reward_model.enable:
-        if config.reward_model.strategy == 'fsdp':
-            from verl.workers.fsdp_workers import RewardModelWorker
-        elif config.reward_model.strategy == 'megatron':
-            from verl.workers.megatron_workers import RewardModelWorker
+            actor_rollout_cls = AsyncActorRolloutRefWorker if config.actor_rollout_ref.rollout.mode == "async" else ReLIFTActorRolloutRefWorker
+            ray_worker_group_cls = RayWorkerGroup
+
+        elif config.actor_rollout_ref.actor.strategy == "megatron":
+            assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
+            from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
+            from verl.workers.megatron_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker, CriticWorker
+
+            actor_rollout_cls = AsyncActorRolloutRefWorker if config.actor_rollout_ref.rollout.mode == "async" else ActorRolloutRefWorker
+            ray_worker_group_cls = NVMegatronRayWorkerGroup
+
         else:
             raise NotImplementedError
-        role_worker_mapping[Role.RewardModel] = ray.remote(RewardModelWorker)
-        mapping[Role.RewardModel] = global_pool_id
 
-    reward_fn = RewardManager(tokenizer=tokenizer, num_examine=0, reward_impl_version=config.data.reward_impl_version)
+        from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
 
-    # Note that we always use function-based RM for validation
-    val_reward_fn = RewardManager(tokenizer=tokenizer, num_examine=1, reward_impl_version=config.data.reward_impl_version)
+        role_worker_mapping = {
+            Role.ActorRollout: ray.remote(actor_rollout_cls),
+            Role.Critic: ray.remote(CriticWorker),
+        }
 
-    resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
+        global_pool_id = "global_pool"
+        resource_pool_spec = {
+            global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
+        }
+        mapping = {
+            Role.ActorRollout: global_pool_id,
+            Role.Critic: global_pool_id,
+        }
 
-    from .trainer import ReLIFTRayPPOTrainer
-    
-    trainer = ReLIFTRayPPOTrainer(config=config,
-                            tokenizer=tokenizer,
-                            role_worker_mapping=role_worker_mapping,
-                            resource_pool_manager=resource_pool_manager,
-                            ray_worker_group_cls=ray_worker_group_cls,
-                            reward_fn=reward_fn,
-                            val_reward_fn=val_reward_fn)
-    
-    trainer.init_workers()
-    trainer.fit()
+        # we should adopt a multi-source reward function here
+        # - for rule-based rm, we directly call a reward score
+        # - for model-based rm, we call a model
+        # - for code related prompt, we send to a sandbox if there are test cases
+        # - finally, we combine all the rewards together
+        # - The reward type depends on the tag of the data
+        if config.reward_model.enable:
+            if config.reward_model.strategy in ["fsdp", "fsdp2"]:
+                from verl.workers.fsdp_workers import RewardModelWorker
+            elif config.reward_model.strategy == "megatron":
+                from verl.workers.megatron_workers import RewardModelWorker
+            else:
+                raise NotImplementedError
+            role_worker_mapping[Role.RewardModel] = ray.remote(RewardModelWorker)
+            mapping[Role.RewardModel] = global_pool_id
+
+        # use reference model
+        if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
+            role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
+            mapping[Role.RefPolicy] = global_pool_id
+
+        from .reward import get_custom_reward_fn
+
+        reward_manager_name = config.reward_model.get("reward_manager", "naive")
+        if reward_manager_name == 'naive':
+            from .reward import NaiveRewardManager
+            reward_manager_cls = NaiveRewardManager
+        elif reward_manager_name == 'prime':
+            from verl.workers.reward_manager import PrimeRewardManager
+            reward_manager_cls = PrimeRewardManager
+        else:
+            raise NotImplementedError
+
+        compute_score = get_custom_reward_fn(config)
+        reward_fn = reward_manager_cls(tokenizer=tokenizer,
+                                    num_examine=0,
+                                    compute_score=compute_score,
+                                    reward_fn_key=config.data.reward_fn_key,
+                                    max_resp_len=config.data.max_response_length,
+                                    overlong_buffer_cfg=config.custom_reward_function.overlong_buffer)
+
+        # Note that we always use function-based RM for validation
+        val_reward_fn = reward_manager_cls(tokenizer=tokenizer,
+                                        num_examine=0,
+                                        compute_score=compute_score,
+                                        reward_fn_key=config.data.reward_fn_key,
+                                        max_resp_len=config.data.max_response_length,
+                                        overlong_buffer_cfg=config.custom_reward_function.overlong_buffer)
+        
+        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
+
+        from verl.utils.dataset.rl_dataset import collate_fn
+
+        #train_dataset = create_rl_dataset(config.data.train_files, config.data, tokenizer, processor)
+        #val_dataset = create_rl_dataset(config.data.val_files, config.data, tokenizer, processor)
+        #train_sampler = create_rl_sampler(config.data, train_dataset)
+        train_dataset = None
+        val_dataset = None
+        train_sampler = None
+
+        from .trainer import ReliftPPOTrainer
+
+        trainer = ReliftPPOTrainer(
+            config=config,
+            tokenizer=tokenizer,
+            processor=processor,
+            role_worker_mapping=role_worker_mapping,
+            resource_pool_manager=resource_pool_manager,
+            ray_worker_group_cls=ray_worker_group_cls,
+            reward_fn=reward_fn,
+            val_reward_fn=val_reward_fn,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            collate_fn=collate_fn,
+            train_sampler=train_sampler,
+            device_name=config.trainer.device,
+        )
+        trainer.init_workers()
+        trainer.fit()
 
 
-if __name__ == '__main__':
+def create_rl_dataset(data_paths, data_config, tokenizer, processor):
+    """Create a dataset.
+
+    Arguments:
+        data_config: The data config.
+        tokenizer (Tokenizer): The tokenizer.
+        processor (Processor): The processor.
+
+    Returns:
+        dataset (Dataset): The dataset.
+    """
+    from torch.utils.data import Dataset
+
+    from verl.utils.dataset.rl_dataset import RLHFDataset
+
+    if "custom_cls" in data_config and data_config.custom_cls.get("path", None) is not None:
+        from verl.utils.import_utils import load_extern_type
+
+        dataset_cls = load_extern_type(data_config.custom_cls.path, data_config.custom_cls.name)
+        if not issubclass(dataset_cls, Dataset):
+            raise TypeError(f"The custom dataset class '{data_config.custom_cls.name}' from '{data_config.custom_cls.path}' must inherit from torch.utils.data.Dataset")
+    else:
+        dataset_cls = RLHFDataset
+    print(f"Using dataset class: {dataset_cls.__name__}")
+
+    dataset = dataset_cls(
+        data_files=data_paths,
+        tokenizer=tokenizer,
+        processor=processor,
+        config=data_config,
+    )
+
+    return dataset
+
+
+def create_rl_sampler(data_config, dataset):
+    """Create a sampler for the dataset.
+
+    Arguments:
+        data_config: The data config.
+        dataset (Dataset): The dataset.
+
+    Returns:
+        sampler (Sampler): The sampler.
+    """
+    import torch
+    from torch.utils.data import RandomSampler, SequentialSampler
+
+    # use sampler for better ckpt resume
+    if data_config.shuffle:
+        train_dataloader_generator = torch.Generator()
+        train_dataloader_generator.manual_seed(data_config.get("seed", 1))
+        sampler = RandomSampler(data_source=dataset, generator=train_dataloader_generator)
+    else:
+        sampler = SequentialSampler(data_source=dataset)
+
+    return sampler
+
+
+if __name__ == "__main__":
     main()

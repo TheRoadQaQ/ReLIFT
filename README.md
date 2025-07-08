@@ -18,10 +18,20 @@ You can install ReLIFT dependencies by running the following commands:
 conda create -n relift python=3.10
 conda activate relift
 cd relift
+pip install -e .
+cd verl
+pip install -e .[vllm]
+```
+
+```bash
+conda create -n relift python=3.10
+conda activate relift
+cd relift
 pip install -r requirements.txt
 pip install -e .
 cd verl
 pip install -e .
+pip install flash_attn==2.7.3
 ```
 
 If you encounter issues when installing flash-attn, we recommend you to install it here 

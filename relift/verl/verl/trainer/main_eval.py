@@ -17,55 +17,62 @@ The input is a parquet file that contains N generated sequences and (optional) t
 
 """
 
+from collections import defaultdict
+
 import hydra
-from verl.utils.fs import copy_local_path_from_hdfs
-from verl.utils.reward_score import math
-import pandas as pd
 import numpy as np
+import pandas as pd
+import ray
+from tqdm import tqdm
 
-from deepscaler.rewards.math_reward import deepscaler_reward_fn
-
-
-def select_reward_fn(data_source):
-    if data_source == 'lighteval/MATH':
-        return math.compute_score
-    else:
-        return deepscaler_reward_fn
+from verl.trainer.ppo.reward import get_custom_reward_fn
+from verl.utils.fs import copy_to_local
 
 
-@hydra.main(config_path='config', config_name='evaluation', version_base=None)
+@ray.remote
+def process_item(reward_fn, data_source, response_lst, reward_data):
+    ground_truth = reward_data["ground_truth"]
+    score_lst = [reward_fn(data_source, r, ground_truth) for r in response_lst]
+    return data_source, np.mean(score_lst)
+
+
+@hydra.main(config_path="config", config_name="evaluation", version_base=None)
 def main(config):
-    local_path = copy_local_path_from_hdfs(config.data.path)
+    local_path = copy_to_local(config.data.path, use_shm=config.data.get('use_shm', False))
     dataset = pd.read_parquet(local_path)
-    prompts = dataset[config.data.prompt_key]
     responses = dataset[config.data.response_key]
     data_sources = dataset[config.data.data_source_key]
     reward_model_data = dataset[config.data.reward_model_key]
 
-    passes = 0
-
     total = len(dataset)
-    total_scores = []
-    for i in range(total):
-        response_lst = responses[i]
-        data_source = data_sources[i]
-        # select reward score based on data_source
-        prompt = prompts[i]
-        reward_data = reward_model_data[i]
-        reward_fn = select_reward_fn(data_source)
-        ground_truth = reward_data['ground_truth']
-        score_lst = []
-        for r in response_lst:
-            score = reward_fn(r, ground_truth)
-            score_lst.append(score)
-        max_score = np.max(score_lst)
-        total_scores.append(score_lst)
-        n_samples = len(response_lst)
-        if max_score == 1:
-            passes += 1
-    print(f'Pass@1, Avg: {np.mean(total_scores)}')
-    print(f'Pass@{n_samples}: {passes / total}')
+
+    # Initialize Ray
+    if not ray.is_initialized():
+        ray.init(num_cpus=config.ray_init.num_cpus)
+
+    # evaluate test_score based on data source
+    data_source_reward = defaultdict(list)
+    compute_score = get_custom_reward_fn(config)
+
+    # Create remote tasks
+    remote_tasks = [process_item.remote(compute_score, data_sources[i], responses[i], reward_model_data[i]) for i in range(total)]
+
+    # Process results as they come in
+    with tqdm(total=total) as pbar:
+        while len(remote_tasks) > 0:
+            # Use ray.wait to get completed tasks
+            done_ids, remote_tasks = ray.wait(remote_tasks)
+            for result_id in done_ids:
+                data_source, score = ray.get(result_id)
+                data_source_reward[data_source].append(score)
+                pbar.update(1)
+
+    metric_dict = {}
+    for data_source, rewards in data_source_reward.items():
+        metric_dict[f"test_score/{data_source}"] = np.mean(rewards)
+
+    print(metric_dict)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
