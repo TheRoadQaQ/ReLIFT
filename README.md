@@ -18,10 +18,12 @@ You can install ReLIFT dependencies by running the following commands:
 conda create -n relift python=3.10
 conda activate relift
 cd relift
+pip install -r requirements.txt
 pip install -e .
 cd verl
-pip install -e .[vllm]
+pip install -e .
 ```
+Using vllm==0.8.3 is also fine. Please check the official vLLM documentation for instructions on how to upgrade.
 
 If you encounter issues when installing flash-attn, we recommend you to install it here 
 [flash-attn](https://github.com/Dao-AILab/flash-attention/releases/tag/v2.7.3). For example, we use this version. 
