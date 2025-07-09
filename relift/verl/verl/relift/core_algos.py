@@ -11,9 +11,7 @@ def compute_sft_loss(log_prob, eos_mask):
         "sft_loss": sft_loss,
     }   
 
-# when entropy larger then
-# weight to each token: w_SFT = 0.5 ∗ exp(−H(t))
-# high entropy with lower weight
+# lower entropy tokens with higher weight
 def compute_sft_loss_v1(log_prob, eos_mask, entropy):
     sft_losses = -1 * log_prob
     weight = 0.5 * torch.exp(-entropy.detach())
@@ -23,6 +21,7 @@ def compute_sft_loss_v1(log_prob, eos_mask, entropy):
         "sft_loss": sft_loss,
     }  
 
+# luffy reshape
 def compute_sft_loss_v2(log_prob, eos_mask):
     prob = torch.exp(log_prob)
     shaped_prob = prob/(prob + 0.1)
@@ -33,9 +32,7 @@ def compute_sft_loss_v2(log_prob, eos_mask):
         "sft_loss": sft_loss,
     }   
 
-# when entropy larger then
-# weight to each token: w_SFT = 0.5 ∗ exp(−H(t))
-# higher entropy with higher weight
+# higher entropy tokens with higher weight
 def compute_sft_loss_v3(log_prob, eos_mask, entropy):
     sft_losses = -1 * log_prob
     weight = 0.5 * torch.exp(entropy.detach())
@@ -54,7 +51,7 @@ def compute_sft_loss_v4(log_prob, eos_mask, entropy, ratio=0.2):
 
     flat_entropy = masked_entropy.view(-1)
     num_valid = eos_mask.sum().item()
-    k = max(1, int(num_valid * ratio))  # 至少选1个
+    k = max(1, int(num_valid * ratio))
 
     topk_entropy, _ = torch.topk(flat_entropy, k, largest=False)
     threshold = topk_entropy[-1]
@@ -85,28 +82,6 @@ def compute_sft_loss_v5(log_prob, eos_mask, entropy, ratio=0.2):
     selected_mask = (masked_entropy >= threshold) & eos_mask
 
     sft_loss = verl_F.masked_mean(sft_losses, selected_mask)
-    return {
-        "sft_loss": sft_loss,
-    }
-
-# select tokens with mid entropy
-def compute_sft_loss_v6(log_prob, eos_mask, entropy, low_ratio=0.25, high_ratio=0.75):
-    sft_losses = -log_prob  # [batch, seq_len]
-
-    valid_entropy = entropy[eos_mask]  # 1D tensor, 只包含有效token
-    num_valid = valid_entropy.numel()
-    if num_valid == 0:
-        return {"sft_loss": torch.tensor(0.0, device=log_prob.device)}
-
-    k_low = max(1, int(num_valid * low_ratio))
-    k_high = max(1, int(num_valid * high_ratio))
-
-    threshold_low = torch.topk(valid_entropy, k_low, largest=False)[-1]
-    threshold_high = torch.topk(valid_entropy, k_high, largest=False)[-1]
-
-    selected_mask = (entropy > threshold_low) & (entropy <= threshold_high) & eos_mask  # [batch, seq_len]
-
-    sft_loss = masked_mean(sft_losses, selected_mask)
     return {
         "sft_loss": sft_loss,
     }

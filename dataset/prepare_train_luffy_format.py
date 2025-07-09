@@ -1,7 +1,7 @@
 from datasets import load_dataset
 import pandas as pd
 
-dataset = load_dataset("RoadQAQ/OpenR1", split="train")
+dataset = load_dataset("Elliott/Openr1-Math-46k-8192", split="train")
 
 print(dataset[0])
 
