@@ -9,3 +9,4 @@
 /dataset/train_data/**
 /dataset/test_data/**
 /eval_scripts/private/**
+/logs/**
