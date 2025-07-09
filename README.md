@@ -62,7 +62,7 @@ ReLIFT, a training method that interleaves RL with online FT, achieving superior
 You need to first run the data preparation script to get the training data in parquet format.
 ```bash
 cd dataset
-python prepare_train.py
+python prepare_train_luffy_format.py
 ```
 
 ## Model Preparation
@@ -73,17 +73,15 @@ You need to first download RoadQAQ/Qwen2.5-Math-1.5B-16k-think, RoadQAQ/Qwen2.5-
 We provide three example script to train. You can run the following command to train ReLIFT for different base models:
 
 ```bash
-  sh ./examples/7b/train.sh
-  sh ./examples/math-1.5b/train.sh
   sh ./examples/math-7b/train.sh
 ```
 
 If you want to train on multi nodes, you can run the following command:
 
 ```bash
-  source ./examples/ray_start.sh #on master node
-  source ./examples/ray_connect.sh #on client nodes
-  sh ./examples/math-7b/train_two_nodes.sh #on master node
+  source ./examples/ray_start.sh # on master node
+  source ./examples/ray_connect.sh # on client nodes
+  sh ./examples/math-7b/train_multi_nodes.sh # on master node
 ```
 
 ## Evaluation

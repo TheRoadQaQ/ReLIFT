@@ -23,7 +23,7 @@ python -u -m verl.relift.main_ppo \
     actor_rollout_ref.actor.optim.sft.lr=1e-6 \
     algorithm.adv_estimator=grpo \
     data.train_files=$DATA_DIR/train_data/openr1.parquet \
-    data.val_files=$DATA_DIR/test_data/valid.parquet \
+    data.val_files=$DATA_DIR/valid.parquet \
     data.truncation='left' \
     data.train_batch_size=128 \
     data.val_batch_size=512 \
