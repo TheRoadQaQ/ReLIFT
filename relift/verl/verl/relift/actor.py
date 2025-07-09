@@ -514,11 +514,11 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                     
                     # all return: (bsz, response_length)
                     calculate_entropy = False
-                    if entropy_coeff != 0 or loss_type == "v1" or loss_type == "v3" or loss_type == "v4" or loss_type == "v5" or loss_type == "v6":
+                    if entropy_coeff != 0 or loss_type == "v1" or loss_type == "v3" or loss_type == "v4" or loss_type == "v5":
                         calculate_entropy = True
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
 
-                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6
+                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5
                     
                     if loss_type == "v0":
                         loss_fn = compute_sft_loss
