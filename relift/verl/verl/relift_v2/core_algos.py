@@ -15,7 +15,7 @@ def compute_rl_sft_loss(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=0.5
+    alpha=1.0
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.
@@ -71,9 +71,9 @@ def compute_rl_sft_loss(
     rl_mask = response_mask & ~sft_mask
     pg_loss = agg_loss(loss_mat=pg_losses, loss_mask=rl_mask, loss_agg_mode=loss_agg_mode)
 
-    sft_log_prob = log_prob[sft_mask]
-    sft_response_mask = response_mask[sft_mask]
-    sft_loss = agg_loss(loss_mat=sft_log_prob, loss_mask=sft_response_mask, loss_agg_mode=loss_agg_mode)
+    sft_losses = -1 * log_prob 
+    sft_response_mask = response_mask & sft_mask
+    sft_loss = agg_loss(loss_mat=sft_losses, loss_mask=sft_response_mask, loss_agg_mode=loss_agg_mode)
 
     loss = pg_loss + alpha * sft_loss
 
