@@ -769,12 +769,11 @@ class ReliftPPOTrainer(RayPPOTrainer):
                     
                     shape = batch.batch["response_mask"].shape
                     sft_mask = torch.zeros(shape[0], shape[1], dtype=torch.bool)
-                    sft_index_mask = torch.zeros(shape[0], dtype=torch.bool)
                     sft_mask[sft_indexes, :] = True
-                    sft_index_mask[sft_indexes] = True
-
                     batch.batch["sft_mask"] = sft_mask
 
+                    sft_index_mask = torch.zeros(shape[0], dtype=torch.bool)
+                    sft_index_mask[sft_indexes] = True
                     self.replace_response_in_batch(batch.batch[sft_index_mask])
 
                     # recompute old_log_probs

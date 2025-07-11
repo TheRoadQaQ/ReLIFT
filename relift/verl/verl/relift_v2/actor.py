@@ -402,19 +402,41 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                     entropy_coeff = self.config.entropy_coeff
                     loss_agg_mode = self.config.loss_agg_mode
 
+                    loss_function = self.config.get("loss_function", "v0")
+
                     # all return: (bsz, response_length)
                     calculate_entropy = False
                     if entropy_coeff != 0:
                         calculate_entropy = True
+
+                    if loss_function in ["v2", "v3", "v4"]:
+                        calculate_entropy = True
+                    
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
 
-                    from .core_algos import compute_rl_sft_loss
-                    loss, sft_loss, pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower = compute_rl_sft_loss(
+                    from .core_algos import compute_rl_sft_loss, compute_rl_sft_loss_v1, compute_rl_sft_loss_v2, compute_rl_sft_loss_v3, compute_rl_sft_loss_v4
+                    
+                    if loss_function == "v0":
+                        # rl with standard sft loss for hardest questions
+                        loss_function = compute_rl_sft_loss
+                    elif loss_function == "v1":
+                        # luffy reshape sft loss
+                        loss_function = compute_rl_sft_loss_v1
+                    elif loss_function == "v2":
+                        # 
+                        loss_function = compute_rl_sft_loss_v2
+                    elif loss_function == "v3":
+                        loss_function = compute_rl_sft_loss_v3
+                    elif loss_function == "v4":
+                        loss_function = compute_rl_sft_loss_v4
+                    
+                    loss, sft_loss, pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower = loss_function(
                         old_log_prob=old_log_prob,
                         log_prob=log_prob,
                         advantages=advantages,
                         response_mask=response_mask,
                         sft_mask=sft_mask,
+                        entropy=entropy,
                         cliprange=clip_ratio,
                         cliprange_low=clip_ratio_low,
                         cliprange_high=clip_ratio_high,
@@ -461,132 +483,4 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                 data = {"actor/grad_norm": grad_norm.detach().item()}
                 append_to_dict(metrics, data)
         self.actor_optimizer.zero_grad()
-        return metrics
-
-    @GPUMemoryLogger(role="dp actor", logger=logger)
-    def sft_update_policy(self, data: DataProto):
-        # make sure we are in training mode
-        self.actor_module.train()
-
-        temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
-        multi_turn = data.meta_info.get("multi_turn", False)
-
-        select_keys = ["responses", "input_ids", "attention_mask", "position_ids"]
-        batch = data.select(batch_keys=select_keys).batch
-        has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
-
-        # Split to make minibatch iterator for updating the actor
-        # See PPO paper for details. https://arxiv.org/abs/1707.06347
-        if has_multi_modal_inputs:
-            num_mini_batches = data.batch.batch_size[0] // self.config.ppo_mini_batch_size
-            non_tensor_select_keys = ["multi_modal_inputs"]
-            dataloader = data.select(select_keys, non_tensor_select_keys).chunk(num_mini_batches)
-        else:
-            dataloader = batch.split(self.config.sft.sft_mini_batch_size)
-
-        metrics = {}
-        for epoch in range(self.config.sft.sft_epochs):
-            for batch_idx, data in enumerate(dataloader):
-                # split batch into micro_batches
-                mini_batch = data
-                if self.config.use_dynamic_bsz:
-                    max_token_len = self.config.ppo_max_token_len_per_gpu * self.ulysses_sequence_parallel_size
-                    micro_batches, _ = rearrange_micro_batches(batch=mini_batch, max_token_len=max_token_len)
-                else:
-                    self.gradient_accumulation = self.config.sft.sft_mini_batch_size // self.config.sft.sft_micro_batch_size_per_gpu
-                    # split batch into micro_batches
-                    micro_batches = mini_batch.split(self.config.sft.sft_micro_batch_size_per_gpu)
-
-                self.sft_actor_optimizer.zero_grad()
-
-                for data in micro_batches:
-                    # Support all hardwares
-                    if isinstance(data, DataProto):
-                        data = {**data.batch.to(get_torch_device().current_device()), **data.non_tensor_batch}
-                    else:
-                        data = data.to(get_torch_device().current_device())  # actor device is cpu when using offload
-                    responses = data["responses"]
-                    response_length = responses.size(1)
-                    attention_mask = data["attention_mask"]
-                    if multi_turn:
-                        response_mask = data["loss_mask"][:, -response_length:]
-                    else:
-                        response_mask = attention_mask[:, -response_length:]
-
-                    entropy_coeff = self.config.sft.entropy_coeff
-
-                    loss_type = self.config.sft.get("sft_loss_type", "v0")
-                    
-                    # all return: (bsz, response_length)
-                    calculate_entropy = False
-                    if entropy_coeff != 0 or loss_type == "v1" or loss_type == "v3" or loss_type == "v4" or loss_type == "v5":
-                        calculate_entropy = True
-                    entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
-
-                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5
-                    
-                    if loss_type == "v0":
-                        loss_fn = compute_sft_loss
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask)
-                    elif loss_type == "v1":
-                        print("using v1")
-                        loss_fn = compute_sft_loss_v1
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
-                    elif loss_type == "v2":
-                        loss_fn = compute_sft_loss_v2
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask)
-                    elif loss_type == "v3":
-                        loss_fn = compute_sft_loss_v3
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
-                    elif loss_type == "v4":
-                        loss_fn = compute_sft_loss_v4
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
-                    elif loss_type == "v5":
-                        loss_fn = compute_sft_loss_v5
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
-                    elif loss_type == "v6":
-                        loss_fn = compute_sft_loss_v6
-                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
-                    else:
-                        raise ValueError(f"Invalid sft loss type: {loss_type}")
-
-                    sft_loss = ret_dict["sft_loss"]
-
-                    if entropy_coeff != 0:
-                        loss_agg_mode = self.config.loss_agg_mode
-                        entropy_loss = agg_loss(loss_mat=entropy, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
-
-                        # compute policy loss
-                        policy_loss = sft_loss - entropy_loss * entropy_coeff
-                    else:
-                        policy_loss = sft_loss
-                        entropy_loss = 0
-
-                    if self.config.use_dynamic_bsz:
-                        # relative to the dynamic bsz
-                        loss = policy_loss * (len(data) / self.config.sft.sft_mini_batch_size)
-                    else:
-                        loss = policy_loss / self.gradient_accumulation
-
-                    loss.backward()
-
-                    if entropy_coeff != 0:
-                        data = {
-                            'actor/combined_loss': float(policy_loss.detach().cpu().item()),
-                            'actor/sft_loss': float(sft_loss.detach().cpu().item()),
-                            'actor/sft_entropy_loss': float(entropy_loss.detach().cpu().item())
-                        }
-                    else:
-                        data = {
-                            'actor/combined_loss': float(policy_loss.detach().cpu().item()),
-                            'actor/sft_loss': float(sft_loss.detach().cpu().item())
-                        }
-                    
-                    append_to_dict(metrics, data)
-
-                grad_norm = self._sft_optimizer_step()
-                data = {"actor/sft_grad_norm": grad_norm.detach().item()}
-                append_to_dict(metrics, data)
-                
-        self.sft_actor_optimizer.zero_grad()
         return metrics
