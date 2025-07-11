@@ -400,9 +400,9 @@ def compute_rl_sft_loss_v4(
     num_valid = sft_response_mask.sum().item()
     k = max(1, int(num_valid * 0.2))  # 至少选1个
 
-    topk_entropy, _ = torch.topk(masked_entropy, k, largest=True)
+    flat_entropy = masked_entropy.view(-1)
+    topk_entropy, _ = torch.topk(flat_entropy, k, largest=True)
     threshold = topk_entropy[-1]
-
     entropy_select_mask = (masked_entropy >= threshold)
     sft_response_mask = entropy_select_mask & sft_response_mask
 
@@ -491,7 +491,8 @@ def compute_rl_sft_loss_v5(
     num_valid = sft_response_mask.sum().item()
     k = max(1, int(num_valid * 0.2))  # 至少选1个
 
-    topk_entropy, _ = torch.topk(masked_entropy, k, largest=False)
+    flat_entropy = masked_entropy.view(-1)
+    topk_entropy, _ = torch.topk(flat_entropy, k, largest=False)
     threshold = topk_entropy[-1]
 
     entropy_select_mask = (masked_entropy <= threshold)
