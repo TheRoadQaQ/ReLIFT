@@ -93,7 +93,7 @@ def compute_rl_sft_loss_v1(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=1/8
+    alpha=1.0
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.
