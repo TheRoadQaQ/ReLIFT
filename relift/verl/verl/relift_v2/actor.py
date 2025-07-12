@@ -423,7 +423,6 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                         # luffy reshape sft loss
                         loss_function = compute_rl_sft_loss_v1
                     elif loss_function == "v2":
-                        # 
                         loss_function = compute_rl_sft_loss_v2
                     elif loss_function == "v3":
                         loss_function = compute_rl_sft_loss_v3

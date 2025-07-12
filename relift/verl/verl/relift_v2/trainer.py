@@ -604,7 +604,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
         batch['position_ids'] = torch.cat(
             [original_position_ids, response_position_ids], dim=-1)
 
-        return
+        return batch
 
     def fit(self):
         """
@@ -649,6 +649,8 @@ class ReliftPPOTrainer(RayPPOTrainer):
         n_samples = self.config.actor_rollout_ref.rollout.n
         sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
         sft_buffer_batch = None
+
+        #breakpoint()
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -774,7 +776,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
 
                     sft_index_mask = torch.zeros(shape[0], dtype=torch.bool)
                     sft_index_mask[sft_indexes] = True
-                    self.replace_response_in_batch(batch.batch[sft_index_mask])
+                    batch.batch[sft_index_mask] = self.replace_response_in_batch(batch.batch[sft_index_mask])
 
                     # recompute old_log_probs
                     with _timer("old_log_prob", timing_raw):
