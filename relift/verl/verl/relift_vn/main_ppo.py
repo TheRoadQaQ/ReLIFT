@@ -32,7 +32,7 @@ def run_ppo(config) -> None:
         # this is for local ray cluster
         # "RAY_DEBUG": "1",
         ray.init(
-            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN", "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "true"}},
+            runtime_env={"env_vars": {"RAY_DEBUG": "1", "TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN", "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "true"}},
         )
 
     runner = TaskRunner.remote()
