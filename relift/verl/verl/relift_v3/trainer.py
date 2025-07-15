@@ -567,7 +567,6 @@ class ReliftPPOTrainer(RayPPOTrainer):
         eos_token_id = self.tokenizer.eos_token_id
         pad_token_id = self.tokenizer.pad_token_id
         
-        batch = batch.batch
         prompts = batch['prompts'] # b x p_l
         tgt_input_ids = batch['tgt_input_ids'].clone() # b x r_l
         
@@ -605,7 +604,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
         batch['position_ids'] = torch.cat(
             [original_position_ids, response_position_ids], dim=-1)
 
-        return
+        return batch
 
     def fit(self):
         """
@@ -650,6 +649,8 @@ class ReliftPPOTrainer(RayPPOTrainer):
         n_samples = self.config.actor_rollout_ref.rollout.n
         sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
         sft_buffer_batch = None
+
+        breakpoint()
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -761,24 +762,58 @@ class ReliftPPOTrainer(RayPPOTrainer):
 
                     # how to buffer samples for subsequent SFT
                     sft_buffer_uids = solve_none_uids
-                    
-                    # create buffer batch
-                    buffer_indexes = []
-                    uids = batch.non_tensor_batch['uid']
-                    for i, uid in enumerate(unique_uids):
-                        if uid in sft_buffer_uids:
-                            indices = np.where(uids == uid)[0]
-                            indice = indices[0]
-                            buffer_indexes.append(indice)
 
-                    # update sft_buffer_batch
-                    if sft_data_size != -1 and buffer_indexes:
-                        buffer_batch = batch.select_idxs(buffer_indexes)
+                    # create buffer batch
+                    sft_indexes = []
+                    uids = batch.non_tensor_batch['uid']
+                    for uid in sft_buffer_uids:
+                        # 找到所有属于这个 uid 的样本索引
+                        indices = np.where(uids == uid)[0]
+                        indice = indices[0]
+                        sft_indexes.append(indice)
+                    
+                    shape = batch.batch["response_mask"].shape
+                    sft_mask = torch.zeros(shape[0], shape[1], dtype=torch.bool)
+                    sft_mask[sft_indexes, :] = True
+                    batch.batch["sft_mask"] = sft_mask
+
+                    sft_index_mask = torch.zeros(shape[0], dtype=torch.bool)
+                    sft_index_mask[sft_indexes] = True
+                    batch.batch[sft_index_mask] = self.replace_response_in_batch(batch.batch[sft_index_mask])
+
+                    # re-compute reward
+                    with _timer("reward", timing_raw):
+                        reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
+
+                    fail_value = 0
+                    success_value = 1
+
+                    solve_none = 0
+                    solve_all = 0
+
+                    solve_none_uids = []
+                    uid2solve_num = {}
+                    for uid in unique_uids:
+                        uid_mask = uids == uid
+                        uid_rewards = reward_tensor[uid_mask].sum(-1)  # Sum rewards for each sequence
                         
-                        if sft_buffer_batch is not None:
-                            sft_buffer_batch = DataProto.concat([sft_buffer_batch, buffer_batch])
-                        else:
-                            sft_buffer_batch = buffer_batch
+                        # Check if all rewards are 0 or all are 1 for this uid
+                        if (uid_rewards == fail_value).all():
+                            solve_none_uids.append(uid)
+                            solve_none += 1
+                        elif (uid_rewards == success_value).all():
+                            solve_all += 1
+
+                        uid2solve_num[uid] = uid_rewards.sum().item()
+
+                    # Log to metrics
+                    metrics['batch/re_solve_none'] = solve_none
+                    metrics['batch/re_solve_all'] = solve_all
+
+                    metrics['batch/re_solved'] = (reward_tensor.sum(-1) == success_value).sum().item() / len(uids)
+                    metrics['batch/re_failed'] = (reward_tensor.sum(-1) == fail_value).sum().item() / len(uids)
+
+                    
 
                     # recompute old_log_probs
                     with _timer("old_log_prob", timing_raw):
