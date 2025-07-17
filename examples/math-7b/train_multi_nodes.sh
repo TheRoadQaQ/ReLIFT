@@ -28,13 +28,13 @@ python -u -m verl.relift.main_ppo \
     data.train_batch_size=128 \
     data.val_batch_size=512 \
     data.max_prompt_length=1024 \
-    data.max_response_length=10240 \
-    data.max_target_length=10240 \
+    data.max_response_length=8192 \
+    data.max_target_length=8192 \
     data.target_key="target" \
     reward_model.reward_manager="naive" \
     custom_reward_function.path="./utils/reward_utils/my_reward_func.py" \
     custom_reward_function.name="my_reward_func" \
-    custom_reward_function.overlong_buffer.enable=True \
+    custom_reward_function.overlong_buffer.enable=False \
     custom_reward_function.overlong_buffer.len=4096 \
     custom_reward_function.overlong_buffer.penalty_factor=1.0 \
     actor_rollout_ref.model.path=$MODEL_PATH \
