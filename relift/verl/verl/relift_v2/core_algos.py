@@ -16,7 +16,7 @@ def compute_rl_sft_loss(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=1.0
+    alpha=1/8
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.
@@ -172,7 +172,7 @@ def compute_rl_sft_loss_v2(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=1.0
+    alpha=1/8
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.
@@ -253,7 +253,7 @@ def compute_rl_sft_loss_v3(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=1.0
+    alpha=1/8
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.
@@ -334,7 +334,7 @@ def compute_rl_sft_loss_v4(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=1.0
+    alpha=1/8
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.
@@ -425,7 +425,7 @@ def compute_rl_sft_loss_v5(
     cliprange_high=None,
     clip_ratio_c=3.0,
     loss_agg_mode: str = "token-mean",
-    alpha=1.0
+    alpha=1/8
 ):
     """
     Compute the clipped policy objective and related metrics for PPO.

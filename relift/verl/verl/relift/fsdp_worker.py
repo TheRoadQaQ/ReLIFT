@@ -381,8 +381,16 @@ class ReLIFTActorRolloutRefWorker(Worker):
                                           lr=optim_config.sft.lr,
                                           betas=optim_config.get('betas', (0.9, 0.999)),
                                           weight_decay=optim_config.get('weight_decay', 1e-2))
-            
-            sft_actor_lr_scheduler = get_constant_schedule_with_warmup(optimizer=sft_actor_optimizer, num_warmup_steps=num_warmup_steps)
+
+            sft_warmup_style = optim_config.sft.get('warmup_style', 'constant')
+            sft_num_warmup_steps = optim_config.sft.get('lr_warmup_steps', -1)
+            if sft_warmup_style == 'constant':
+                sft_actor_lr_scheduler = get_constant_schedule_with_warmup(optimizer=sft_actor_optimizer, num_warmup_steps=sft_num_warmup_steps)
+            elif sft_warmup_style == 'cosine':
+                sft_min_lr_ratio = optim_config.sft.get('min_lr_ratio', 0.0)
+                sft_num_cycles = optim_config.sft.get('num_cycles', 0.5)
+                sft_total_steps = optim_config.sft.get('total_training_steps', 0)
+                sft_actor_lr_scheduler = get_cosine_schedule_with_warmup(optimizer=sft_actor_optimizer, num_warmup_steps=sft_num_warmup_steps, num_training_steps=sft_total_steps, min_lr_ratio=sft_min_lr_ratio, num_cycles=sft_num_cycles)
             
             log_gpu_memory_usage(f"After {role} optimizer init", logger=logger)
         else:

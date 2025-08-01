@@ -767,7 +767,8 @@ class ReliftPPOTrainer(RayPPOTrainer):
                     sft_indexes = []
                     for i, uid in enumerate(unique_uids):
                         if uid in sft_buffer_uids:
-                            sft_indexes.extend(list(range(i * n_samples, (i + 1) * n_samples)))
+                            indices = np.where(uids == uid)[0].tolist()
+                            sft_indexes.extend(indices)
                     
                     shape = batch.batch["response_mask"].shape
                     sft_mask = torch.zeros(shape[0], shape[1], dtype=torch.bool)
@@ -897,6 +898,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
                             )
 
                     # SFT update using hard-batch
+                    '''
                     if sft_data_size != -1 and sft_buffer_batch is not None and len(sft_buffer_batch) >= sft_data_size:
                         with _timer('sft_update_actor', timing_raw):
                             print("SFT")
@@ -918,7 +920,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
                             sft_output = self.actor_rollout_wg.sft_update_actor(sft_train_batch)
                             sft_output_metrics = reduce_metrics(sft_output.meta_info['metrics'])
                             metrics.update(sft_output_metrics)
-
+                    '''
                     # validate
                     if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
                         with _timer("testing", timing_raw):

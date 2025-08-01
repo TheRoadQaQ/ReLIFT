@@ -523,10 +523,13 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                     old_response_length = data['old_responses'].size(1)
                     old_attention_mask = data["old_attention_mask"][:, -old_response_length:]
 
-                    from .core_algos import compute_contrastive_sft_loss
+                    from .core_algos import compute_contrastive_sft_loss, compute_dpo_loss
                     
                     if loss_type == "v0":
                         loss_fn = compute_contrastive_sft_loss
+                        ret_dict = loss_fn(target_log_prob=log_prob, target_eos_mask=response_mask, fail_log_prob=old_log_probs, fail_eos_mask=old_attention_mask)
+                    elif loss_type == "v1":
+                        loss_fn = compute_dpo_loss
                         ret_dict = loss_fn(target_log_prob=log_prob, target_eos_mask=response_mask, fail_log_prob=old_log_probs, fail_eos_mask=old_attention_mask)
                     else:
                         raise ValueError(f"Invalid sft loss type: {loss_type}")

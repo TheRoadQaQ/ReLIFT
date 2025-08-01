@@ -654,7 +654,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
         sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
         sft_buffer_batch = None
 
-        breakpoint()
+        #breakpoint()
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
