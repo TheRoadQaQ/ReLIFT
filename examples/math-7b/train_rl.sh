@@ -9,13 +9,15 @@ set -x
 export MODEL_PATH=$MODEL_ROOT/Qwen2.5-Math-7B
 export DATA_DIR=./dataset
 
-export EXP_NAME=math_7b_relift
+export EXP_NAME=math_7b_rl
 export WANDB_PROJECT="relift"
+
+# sft_data_size setting to -1 means pure RL
 
 python -u -m verl.relift.main_ppo \
     +actor_rollout_ref.actor.sft.sft_loss_type="v0" \
     actor_rollout_ref.actor.sft.sft_epochs=1 \
-    actor_rollout_ref.actor.sft.sft_data_size=64 \
+    actor_rollout_ref.actor.sft.sft_data_size=-1 \
     actor_rollout_ref.actor.sft.sft_mini_batch_size=64 \
     actor_rollout_ref.actor.sft.sft_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.actor.sft.entropy_coeff=0.000 \
