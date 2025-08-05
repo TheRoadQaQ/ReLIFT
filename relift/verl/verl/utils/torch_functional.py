@@ -51,7 +51,18 @@ def gather_from_labels(data, label):
     output = torch.gather(data, -1, label.unsqueeze(-1)).squeeze(-1)
     return output
 
+def all_logprobs_from_logits(logits: torch.Tensor) -> torch.Tensor:
+    """
+    从 logits 计算词汇表中所有 token 的对数概率。
 
+    Args:
+        logits (torch.Tensor): 模型的原始输出 (logits)，形状为 (b, response_len, vocab_size)。
+
+    Returns:
+        torch.Tensor: 词汇表中所有 token 的对数概率，形状为 (b, response_len, vocab_size)。
+    """
+    return F.log_softmax(logits, dim=-1)
+    
 def logprobs_from_logits(logits, labels, inplace_backward=True):
     """
     Compute per-token log-probabilities for the given labels.
