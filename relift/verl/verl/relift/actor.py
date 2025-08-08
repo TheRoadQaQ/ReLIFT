@@ -514,11 +514,11 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                     
                     # all return: (bsz, response_length)
                     calculate_entropy = False
-                    if entropy_coeff != 0 or loss_type in ["v1", "v3", "v4", "v5", "v6", "v4_per_sentence"]:
+                    if entropy_coeff != 0 or loss_type in ["v1", "v3", "v4", "v5", "v6", "v4_per_sentence", "v5_per_sentence"]:
                         calculate_entropy = True
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
 
-                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6, compute_sft_loss_v4_per_sentence
+                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6, compute_sft_loss_v4_per_sentence, compute_sft_loss_v5_per_sentence
                     
                     if loss_type == "v0":
                         loss_fn = compute_sft_loss
@@ -544,6 +544,9 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                         ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
                     elif loss_type == "v4_per_sentence":
                         loss_fn = compute_sft_loss_v4_per_sentence
+                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
+                    elif loss_type == "v5_per_sentence":
+                        loss_fn = compute_sft_loss_v5_per_sentence
                         ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
                     else:
                         raise ValueError(f"Invalid sft loss type: {loss_type}")

@@ -146,3 +146,36 @@ def compute_sft_loss_v4_per_sentence(log_prob, eos_mask, entropy, ratio=0.2):
     return {
         "sft_loss": sft_loss,
     }
+
+# only update tokens with high entropy but per sentence
+def compute_sft_loss_v5_per_sentence(log_prob, eos_mask, entropy, ratio=0.2):
+    sft_losses = -1 * log_prob  # [B, T]
+
+    B, T = entropy.shape
+    selected_mask = torch.zeros_like(entropy, dtype=torch.bool)
+
+    for i in range(B):
+        # 获取第 i 个句子的有效 token
+        eos_i = eos_mask[i].bool()  # [T]
+        # 只保留有效 token 的 entropy
+        ent_i = entropy[i][eos_i]
+
+        num_valid = ent_i.numel()
+        # 至少选择一个 token
+        k = max(1, int(num_valid * ratio))
+
+        # 找到当前句子中 top-k 高熵的 token
+        topk_ent, _ = torch.topk(ent_i, k, largest=True)
+        # 获取 top-k 中最小的熵值作为阈值
+        threshold = topk_ent[-1]
+
+        # 构造该句子的选择掩码
+        # 选择熵值大于等于阈值的 token，且这些 token 必须是有效的
+        mask_i = (entropy[i] >= threshold) & eos_i
+        selected_mask[i] = mask_i
+
+    # 只对 selected_mask 为 True 的位置计算损失
+    sft_loss = verl_F.masked_mean(sft_losses, selected_mask)
+    return {
+        "sft_loss": sft_loss,
+    }
