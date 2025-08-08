@@ -243,9 +243,9 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
         else:
             grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.grad_clip)
 
-        # if grad_norm is not finite, skip the update
-        if not torch.isfinite(grad_norm):
-            print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite: {grad_norm}")
+        # if grad_norm is not finite or larger than max_grad_skip, skip the update
+        if not torch.isfinite(grad_norm) or (grad_norm > self.config.max_grad_norm):
+            print("RL grad set to zero")
             self.actor_optimizer.zero_grad()
         else:
             self.actor_optimizer.step()
@@ -263,7 +263,7 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
 
         # if grad_norm is not finite, skip the update
         if (not torch.isfinite(grad_norm)) or (grad_norm > self.config.sft.max_sft_grad_norm):
-            print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite: {grad_norm}")
+            print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite or too large: {grad_norm}")
             self.sft_actor_optimizer.zero_grad()
         else:
             self.sft_actor_optimizer.step()

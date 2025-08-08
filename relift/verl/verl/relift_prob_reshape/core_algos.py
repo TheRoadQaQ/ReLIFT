@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import verl.utils.torch_functional as verl_F
 
-def compute_prob_reshape_sft_loss(log_prob, target_id, eos_mask, tau=0.1):
+def compute_prob_reshape_sft_loss(log_prob, target_id, eos_mask, tau):
     '''
     根据提供的公式计算重塑后的目标概率，用于SFT loss。
 
@@ -81,6 +81,103 @@ def compute_prob_reshape_sft_loss(log_prob, target_id, eos_mask, tau=0.1):
 
     sft_loss = verl_F.masked_mean(kl_losses, eos_mask)
 
+    mean_max_prob = reshaped_prob.max(dim=2).values.mean()
+
     return {
-        "sft_loss": sft_loss
+        "sft_loss": sft_loss,
+        'mean_max_prob': mean_max_prob
     }   
+
+def compute_prob_reshape_sft_loss_v1(log_prob, target_id, eos_mask, tau, k=64):
+    '''
+    高效计算SFT loss。
+    该版本通过只计算一小部分候选token的重塑概率来避免创建完整的(b, l, v)大小的reshaped_prob张量，
+    从而提升计算和内存效率。
+
+    Args:
+        log_prob (torch.Tensor): 形状 (b, l, v)。
+        target_id (torch.Tensor): 形状 (b, l)。
+        eos_mask (torch.Tensor): 形状 (b, l)。
+        tau (float): 目标边际 τ。
+        k (int): KL散度计算中考虑的候选token数量。
+
+    Returns:
+        dict: 包含 "sft_loss" 的字典。
+    '''
+    # --- 第 1-6 步：与之前相同，计算 factor，这部分需要全局信息 ---
+    prob = torch.exp(log_prob).detach()
+    b, l, v = prob.shape
+    
+    p_argmax, argmax_id = torch.max(prob, dim=-1)
+    p_target = torch.gather(prob, -1, target_id.unsqueeze(-1)).squeeze(-1)
+
+    is_correct = (argmax_id == target_id)
+    is_incorrect = ~is_correct
+
+    denominator_alpha = 1 + p_argmax - p_target
+    alpha = (p_argmax - p_target + tau) / (denominator_alpha + 1e-9)
+
+    new_p_target = torch.min(torch.ones_like(p_target), p_target + tau)
+    denominator_beta = 1 - p_target
+    beta = torch.where(
+        denominator_beta > 1e-9,
+        (new_p_target - p_target) / denominator_beta,
+        torch.zeros_like(denominator_beta)
+    )
+    
+    factor = torch.where(is_incorrect, alpha, beta)
+    factor = factor * eos_mask
+    
+    # --- V4 的核心优化部分 ---
+    
+    # 7. 确定候选token池
+    # 我们认为最终的 top-k 概率将来自：
+    #   a) 原始概率最高的 k-1 个 token
+    #   b) 目标 token
+    # 这样可以避免在整个词汇表上计算 reshaped_prob。
+    # 注意：这里取 topk(k) 而不是 k-1，因为 target_id 可能就在 topk 里，合并后会自动去重。
+    _, topk_indices_from_prob = torch.topk(prob, k=k, dim=-1) # (b, l, k)
+
+    # 将 target_id 加入候选池
+    candidate_indices = torch.cat([topk_indices_from_prob, target_id.unsqueeze(-1)], dim=-1) # (b, l, k+1)
+    
+    # 去除重复的索引，因为 target_id 可能本身就在 top-k 中
+    candidate_indices = torch.unique(candidate_indices, dim=-1) # (b, l, num_candidates), num_candidates <= k+1
+
+    # 8. 只为候选 token 计算 reshaped_prob
+    # 从原始 prob 和 log_prob 中收集候选者的值
+    prob_candidates = torch.gather(prob, -1, candidate_indices) # (b, l, num_candidates)
+    log_prob_candidates = torch.gather(log_prob, -1, candidate_indices) # (b, l, num_candidates)
+    
+    # 扩展 factor 以进行广播
+    factor_expanded = factor.unsqueeze(-1) # (b, l, 1)
+
+    # 计算候选者的 reshaped_prob
+    # p_candidate^C = (1 - factor) * p_candidate^T 
+    reshaped_prob_candidates = (1 - factor_expanded) * prob_candidates
+
+    # 现在，需要特殊处理目标 token 在候选集中的位置
+    # 找到 target_id 在 candidate_indices 中的位置
+    # (candidate_indices == target_id.unsqueeze(-1)) -> (b, l, num_candidates), 标记 target 的位置
+    target_mask = (candidate_indices == target_id.unsqueeze(-1))
+    
+    # 对目标 token 应用完整的重塑公式: p_target^C = (1-f)p_target^T + f*1
+    # p_target^C = reshaped_prob_of_target (上面已计算) + factor
+    reshaped_prob_candidates = reshaped_prob_candidates + factor_expanded * target_mask.float()
+    
+    # 9. 在候选集上计算KL散度
+    kl_losses = reshaped_prob_candidates * (torch.log(reshaped_prob_candidates + 1e-9) - log_prob_candidates)
+    
+    # 对所有候选者的KL散度求和
+    kl_losses = kl_losses.sum(dim=-1) # (b, l)
+
+    # 10. 计算最终的带掩码的平均损失
+    sft_loss = (kl_losses * eos_mask).sum() / eos_mask.sum().clamp(min=1)
+
+    mean_max_prob = reshaped_prob_candidates.max(dim=2).values.mean()
+
+
+    return {
+        "sft_loss": sft_loss,
+        'mean_max_prob': mean_max_prob
+    }

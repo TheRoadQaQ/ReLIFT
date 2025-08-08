@@ -75,6 +75,11 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
         )
         self.device_name = get_device_name()
 
+        if self.config.sft.enable_dynamic_max_sft_grad_norm:
+            # 初始化滑动平均grad_norm，设置为一个较大的初始值
+            self.ema_grad_norm = torch.tensor(self.config.sft.max_sft_grad_norm)
+            self.ema_beta = 0.9  # EMA的衰减系数，可以根据需要调整
+
     def _forward_micro_batch(self, micro_batch, temperature, calculate_entropy=False) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns:
@@ -400,9 +405,11 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
         else:
             grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.grad_clip)
 
+        grad_norm = grad_norm.to('cpu')
+
         # if grad_norm is not finite, skip the update
-        if not torch.isfinite(grad_norm):
-            print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite: {grad_norm}")
+        if not torch.isfinite(grad_norm) or (grad_norm > torch.tensor(self.config.max_grad_norm)):
+            print("RL grad set to zero")
             self.actor_optimizer.zero_grad()
         else:
             self.actor_optimizer.step()
@@ -418,13 +425,25 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
         else:
             grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.sft.grad_clip)
 
+        grad_norm = grad_norm.to('cpu')
+
+        if self.config.sft.enable_dynamic_max_sft_grad_norm:
+            dynamic_max_sft_grad_norm = self.ema_grad_norm * 1.5
+        else:
+            dynamic_max_sft_grad_norm = torch.tensor(-1)
+        
         # if grad_norm is not finite, skip the update
-        if (not torch.isfinite(grad_norm)) or (grad_norm > self.config.sft.max_sft_grad_norm):
-            print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite: {grad_norm}")
+        if (not torch.isfinite(grad_norm)) or (grad_norm > self.config.sft.max_sft_grad_norm) or (self.config.sft.enable_dynamic_max_sft_grad_norm and grad_norm > dynamic_max_sft_grad_norm):
+            #print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite: {grad_norm}")
             self.sft_actor_optimizer.zero_grad()
+            print("WARN: sft grad norm setting to zero")
         else:
             self.sft_actor_optimizer.step()
-        return grad_norm
+            
+        if self.config.sft.enable_dynamic_max_sft_grad_norm:
+            self.ema_grad_norm = self.ema_grad_norm * self.ema_beta + grad_norm * (1 - self.ema_beta)
+        
+        return grad_norm, dynamic_max_sft_grad_norm
 
     @GPUMemoryLogger(role="dp actor", logger=logger)
     def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
@@ -677,11 +696,14 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                         calculate_entropy = True
                     entropy, log_prob = self._forward_micro_batch_v2(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
 
-                    from .core_algos import compute_prob_reshape_sft_loss
+                    from .core_algos import compute_prob_reshape_sft_loss, compute_prob_reshape_sft_loss_v1
                     
                     if loss_type == "v0":
                         loss_fn = compute_prob_reshape_sft_loss
-                        ret_dict = loss_fn(log_prob=log_prob, target_id = responses, eos_mask=response_mask)
+                        ret_dict = loss_fn(log_prob=log_prob, target_id = responses, eos_mask=response_mask, tau = self.config.sft.get("tau", 0.1))
+                    elif loss_type == "v1":
+                        loss_fn = compute_prob_reshape_sft_loss_v1
+                        ret_dict = loss_fn(log_prob=log_prob, target_id = responses, eos_mask=response_mask, tau = self.config.sft.get("tau", 0.1))
                     else:
                         raise ValueError(f"Invalid sft loss type: {loss_type}")
 
@@ -705,22 +727,16 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
 
                     loss.backward()
 
-                    if entropy_coeff != 0:
-                        data = {
-                            'actor/combined_loss': float(policy_loss.detach().cpu().item()),
-                            'actor/sft_loss': float(sft_loss.detach().cpu().item()),
-                            'actor/sft_entropy_loss': float(entropy_loss.detach().cpu().item())
-                        }
-                    else:
-                        data = {
-                            'actor/combined_loss': float(policy_loss.detach().cpu().item()),
-                            'actor/sft_loss': float(sft_loss.detach().cpu().item())
-                        }
+                    
+                    data = {
+                        'actor/sft_loss': float(sft_loss.detach().cpu().item()),
+                        'actor/sft_mean_max_prob': float(ret_dict['mean_max_prob'].detach().cpu().item())
+                    }
                     
                     append_to_dict(metrics, data)
 
-                grad_norm = self._sft_optimizer_step()
-                data = {"actor/sft_grad_norm": grad_norm.detach().item()}
+                grad_norm, dynamic_max_sft_grad_norm = self._sft_optimizer_step()
+                data = {"actor/sft_grad_norm": grad_norm.detach().item(), 'actor/dynamic_max_sft_grad_norm': dynamic_max_sft_grad_norm.detach().item()}
                 append_to_dict(metrics, data)
                 
         self.sft_actor_optimizer.zero_grad()
