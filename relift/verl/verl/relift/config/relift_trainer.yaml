@@ -101,6 +101,7 @@ actor_rollout_ref:
       sft_micro_batch_size_per_gpu: 2
       grad_clip: 1.0
       max_sft_grad_norm: 100000
+      using_dynamic_max_sft_grad_norm: False
       entropy_coeff: 0.001 
   ref:
     strategy: fsdp

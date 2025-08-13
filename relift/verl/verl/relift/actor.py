@@ -75,6 +75,8 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
         )
         self.device_name = get_device_name()
 
+        self.before_sft_grad_norm = None
+
     def _forward_micro_batch(self, micro_batch, temperature, calculate_entropy=False) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns:
@@ -262,10 +264,12 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
             grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.sft.grad_clip)
 
         # if grad_norm is not finite, skip the update
-        if (not torch.isfinite(grad_norm)) or (grad_norm > self.config.sft.max_sft_grad_norm):
+        if (not torch.isfinite(grad_norm)) or (grad_norm > self.config.sft.max_sft_grad_norm) \
+                or (self.config.sft.using_dynamic_max_sft_grad_norm and (self.before_sft_grad_norm is not None) and grad_norm > 1.5 * self.before_sft_grad_norm):
             print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite or too large: {grad_norm}")
             self.sft_actor_optimizer.zero_grad()
         else:
+            self.before_sft_grad_norm = grad_norm
             self.sft_actor_optimizer.step()
         return grad_norm
 
@@ -518,7 +522,7 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                         calculate_entropy = True
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
 
-                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6, compute_sft_loss_v4_per_sentence, compute_sft_loss_v5_per_sentence
+                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6, compute_sft_loss_v4_per_sentence, compute_sft_loss_v5_per_sentence, compute_sft_loss_v7
                     
                     if loss_type == "v0":
                         loss_fn = compute_sft_loss
@@ -542,6 +546,9 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                     elif loss_type == "v6":
                         loss_fn = compute_sft_loss_v6
                         ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
+                    elif loss_type == "v7":
+                        loss_fn = compute_sft_loss_v7
+                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask)
                     elif loss_type == "v4_per_sentence":
                         loss_fn = compute_sft_loss_v4_per_sentence
                         ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)

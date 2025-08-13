@@ -179,3 +179,11 @@ def compute_sft_loss_v5_per_sentence(log_prob, eos_mask, entropy, ratio=0.2):
     return {
         "sft_loss": sft_loss,
     }
+
+def compute_sft_loss_v7(log_prob, eos_mask):
+    prob = torch.exp(log_prob).detach()
+    sft_losses = -1 * prob * log_prob
+    sft_loss = verl_F.masked_mean(sft_losses, eos_mask)
+    return {
+        "sft_loss": sft_loss,
+    }   
