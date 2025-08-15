@@ -431,7 +431,9 @@ class ReliftPPOTrainer(RayPPOTrainer):
         
         reward_tensor_lst = []
         data_source_lst = []
-        for test_data in self.val_dataloader:
+        length_lst = []
+
+        for test_data in tqdm(self.val_dataloader):
             test_batch = DataProto.from_single_dict(test_data)
             # test_batch = test_batch.to('cuda')
 
@@ -446,13 +448,12 @@ class ReliftPPOTrainer(RayPPOTrainer):
                 'eos_token_id': self.tokenizer.eos_token_id,
                 'pad_token_id': self.tokenizer.pad_token_id,
                 'recompute_log_prob': False,
-                'do_sample': False,
+                'do_sample': True,
                 'validate': True,
             }
 
             # pad to be divisible by dp_size
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
-            test_gen_batch_padded.meta_info['val_temperature'] = self.config.actor_rollout_ref.rollout.val_kwargs.temperature
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
@@ -463,6 +464,13 @@ class ReliftPPOTrainer(RayPPOTrainer):
             # for certain reward function (e.g. sandbox), the generation can overlap with reward
             reward_tensor = self.val_reward_fn(test_batch, validation_or_not=True)
 
+            # obtain response length
+            def obtain_reponse_length(output_batch):
+                prompt_length = output_batch.batch['prompts'].shape[-1]
+                response_length = output_batch.batch['attention_mask'][:,prompt_length:].sum(1).numpy()
+                return response_length
+            
+            length_lst.append(obtain_reponse_length(test_output_gen_batch))
             reward_tensor_lst.append(reward_tensor)
             data_source_lst.append(test_batch.non_tensor_batch.get('data_source', ['unknown'] * reward_tensor.shape[0]))
 
@@ -470,17 +478,26 @@ class ReliftPPOTrainer(RayPPOTrainer):
 
         reward_tensor = torch.cat(reward_tensor_lst, dim=0).sum(-1).cpu()  # (batch_size,)
         data_sources = np.concatenate(data_source_lst, axis=0)
+        lengths = np.concatenate(length_lst, axis=0)
         # evaluate test_score based on data source
         data_source_reward = {}
+        data_source_response_lengths = {}
         for i in range(reward_tensor.shape[0]):
             data_source = data_sources[i]
             if data_source not in data_source_reward:
                 data_source_reward[data_source] = []
             data_source_reward[data_source].append(reward_tensor[i].item())
 
+            if data_source not in data_source_response_lengths:
+                data_source_response_lengths[data_source] = []
+            data_source_response_lengths[data_source].append(lengths[i])
+
         metric_dict = {}
         for data_source, rewards in data_source_reward.items():
             metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
+
+        for data_source, lengths in data_source_response_lengths.items():
+            metric_dict[f'val/test_length/{data_source}'] = np.mean(lengths)
 
         return metric_dict
 
