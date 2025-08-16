@@ -21,10 +21,12 @@ python -u -m verl.relift.main_ppo \
     data.val_files=$DATA_DIR/test_data/valid.all.parquet \
     data.val_batch_size=512 \
     data.max_prompt_length=2048 \
-    data.max_response_length=10240 \
+    data.max_response_length=8192 \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
+    actor_rollout_ref.rollout.val_kwargs.top_p=1.0 \
     actor_rollout_ref.rollout.val_kwargs.n=1 \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
