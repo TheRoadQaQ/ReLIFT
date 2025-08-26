@@ -381,8 +381,16 @@ class ReLIFTActorRolloutRefWorker(Worker):
                                           lr=optim_config.sft.lr,
                                           betas=optim_config.get('betas', (0.9, 0.999)),
                                           weight_decay=optim_config.get('weight_decay', 1e-2))
-            
-            sft_actor_lr_scheduler = get_constant_schedule_with_warmup(optimizer=sft_actor_optimizer, num_warmup_steps=num_warmup_steps)
+
+            sft_warmup_style = optim_config.sft.get('warmup_style', 'constant')
+            sft_num_warmup_steps = optim_config.sft.get('lr_warmup_steps', -1)
+            if sft_warmup_style == 'constant':
+                sft_actor_lr_scheduler = get_constant_schedule_with_warmup(optimizer=sft_actor_optimizer, num_warmup_steps=sft_num_warmup_steps)
+            elif sft_warmup_style == 'cosine':
+                sft_min_lr_ratio = optim_config.sft.get('min_lr_ratio', 0.0)
+                sft_num_cycles = optim_config.sft.get('num_cycles', 0.5)
+                sft_total_steps = optim_config.sft.get('total_training_steps', 0)
+                sft_actor_lr_scheduler = get_cosine_schedule_with_warmup(optimizer=sft_actor_optimizer, num_warmup_steps=sft_num_warmup_steps, num_training_steps=sft_total_steps, min_lr_ratio=sft_min_lr_ratio, num_cycles=sft_num_cycles)
             
             log_gpu_memory_usage(f"After {role} optimizer init", logger=logger)
         else:
@@ -608,6 +616,49 @@ class ReLIFTActorRolloutRefWorker(Worker):
             # perform training
             with Timer(name="update_policy", logger=None) as timer:
                 metrics = self.actor.update_policy(data=data)
+            delta_time = timer.last
+            global_num_tokens = data.meta_info["global_token_num"]
+            estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)
+            metrics["perf/mfu/actor"] = estimated_flops * self.config.actor.ppo_epochs / promised_flops / self.world_size
+            metrics["perf/max_memory_allocated_gb"] = get_torch_device().max_memory_allocated() / (1024**3)
+            metrics["perf/max_memory_reserved_gb"] = get_torch_device().max_memory_reserved() / (1024**3)
+            metrics["perf/cpu_memory_used_gb"] = psutil.virtual_memory().used / (1024**3)
+
+            lr = self.actor_lr_scheduler.get_last_lr()[0]
+            metrics["actor/lr"] = lr
+            self.actor_lr_scheduler.step()
+
+            # TODO: here, we should return all metrics
+            output = DataProto(meta_info={"metrics": metrics})
+
+            output = self.ulysses_sharding_manager.postprocess_data(data=output)
+            output = output.to("cpu")
+
+        if self._is_offload_param:
+            offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+            log_gpu_memory_usage("After offload actor model during update_actor", logger=logger)
+        if self._is_offload_optimizer:
+            offload_fsdp_optimizer(optimizer=self.actor_optimizer)
+            log_gpu_memory_usage("After offload actor optimizer during update_actor", logger=logger)
+
+        return output
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def relift_update_actor(self, data: DataProto):
+        # Support all hardwares
+        data = data.to(get_torch_device().current_device())
+
+        assert self._is_actor
+        if self._is_offload_param:
+            load_fsdp_model_to_gpu(self.actor_module_fsdp)
+        if self._is_offload_optimizer:
+            load_fsdp_optimizer(optimizer=self.actor_optimizer, device_id=get_torch_device().current_device())
+
+        with self.ulysses_sharding_manager:
+            data = self.ulysses_sharding_manager.preprocess_data(data=data)
+            # perform training
+            with Timer(name="update_policy", logger=None) as timer:
+                metrics = self.actor.relift_update_policy(data=data)
             delta_time = timer.last
             global_num_tokens = data.meta_info["global_token_num"]
             estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)

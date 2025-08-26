@@ -27,7 +27,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from pprint import pprint
-from typing import Dict, Optional, Type
+from typing import Dict, Optional, Type, Union, List
 
 import numpy as np
 import ray
@@ -344,6 +344,63 @@ def _timer(name: str, timing_raw: Dict[str, float]):
         timing_raw[name] = 0
     timing_raw[name] += timer.last
 
+def replace_rows(
+    original_dp: DataProto,
+    replacement_dp: DataProto,
+    indices_to_replace: Union[List[int], np.ndarray, torch.Tensor],
+) -> DataProto:
+    """
+    用另一个DataProto的行替换一个DataProto中的指定行。
+
+    Args:
+        original_dp (DataProto): 原始的DataProto对象。
+        replacement_dp (DataProto): 包含替换行数据的DataProto对象。
+        indices_to_replace (List[int]): original_dp中需要被替换的行的索引列表。
+
+    Returns:
+        DataProto: 一个新的DataProto对象，其中指定的行已被替换。
+
+    Raises:
+        ValueError: 如果替换数据的行数与要替换的索引数不匹配。
+        IndexError: 如果提供的索引超出了original_dp的范围。
+    """
+    if len(replacement_dp) != len(indices_to_replace):
+        raise ValueError(
+            f"替换数据的行数 ({len(replacement_dp)}) 必须等于要替换的索引数 ({len(indices_to_replace)})."
+        )
+
+    if not all(0 <= i < len(original_dp) for i in indices_to_replace):
+        raise IndexError("一个或多个替换索引超出了原始DataProto的范围。")
+
+    # 步骤 1: 将原始数据和替换数据合并成一个大数据源
+    # 原始数据在前，替换数据在后
+    combined_dp = DataProto.concat([original_dp, replacement_dp])
+
+    # 步骤 2: 构建最终的索引映射
+    # 创建一个指向原始数据各行的索引数组
+    num_original_rows = len(original_dp)
+    final_indices = np.arange(num_original_rows)
+
+    # 将需要替换的行的索引，重定向到替换数据在 combined_dp 中的位置
+    # 替换数据的位置从 num_original_rows 开始
+    replacement_source_indices = np.arange(len(replacement_dp)) + num_original_rows
+    
+    # 使用 NumPy 的高级索引功能，一次性更新所有需要替换的位置
+    # 注意：indices_to_replace 必须是 array-like 才能这样用
+    if isinstance(indices_to_replace, list):
+        indices_to_replace = np.array(indices_to_replace)
+        
+    final_indices[indices_to_replace] = replacement_source_indices
+
+    # 步骤 3: 使用最终的索引列表从合并后的数据中选择行，生成新的DataProto
+    # DataProto的 __getitem__ 支持列表/数组索引
+    result_dp = combined_dp[final_indices]
+
+    # 保持原始的 meta_info
+    result_dp.meta_info = original_dp.meta_info
+
+    return result_dp
+
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 class ReliftPPOTrainer(RayPPOTrainer):
     def __init__(self, *args, **kwargs):
@@ -431,7 +488,9 @@ class ReliftPPOTrainer(RayPPOTrainer):
         
         reward_tensor_lst = []
         data_source_lst = []
-        for test_data in self.val_dataloader:
+        length_lst = []
+
+        for test_data in tqdm(self.val_dataloader):
             test_batch = DataProto.from_single_dict(test_data)
             # test_batch = test_batch.to('cuda')
 
@@ -452,7 +511,6 @@ class ReliftPPOTrainer(RayPPOTrainer):
 
             # pad to be divisible by dp_size
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
-            test_gen_batch_padded.meta_info['val_temperature'] = self.config.actor_rollout_ref.rollout.val_kwargs.temperature
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
@@ -463,6 +521,13 @@ class ReliftPPOTrainer(RayPPOTrainer):
             # for certain reward function (e.g. sandbox), the generation can overlap with reward
             reward_tensor = self.val_reward_fn(test_batch, validation_or_not=True)
 
+            # obtain response length
+            def obtain_reponse_length(output_batch):
+                prompt_length = output_batch.batch['prompts'].shape[-1]
+                response_length = output_batch.batch['attention_mask'][:,prompt_length:].sum(1).numpy()
+                return response_length
+            
+            length_lst.append(obtain_reponse_length(test_output_gen_batch))
             reward_tensor_lst.append(reward_tensor)
             data_source_lst.append(test_batch.non_tensor_batch.get('data_source', ['unknown'] * reward_tensor.shape[0]))
 
@@ -470,17 +535,26 @@ class ReliftPPOTrainer(RayPPOTrainer):
 
         reward_tensor = torch.cat(reward_tensor_lst, dim=0).sum(-1).cpu()  # (batch_size,)
         data_sources = np.concatenate(data_source_lst, axis=0)
+        lengths = np.concatenate(length_lst, axis=0)
         # evaluate test_score based on data source
         data_source_reward = {}
+        data_source_response_lengths = {}
         for i in range(reward_tensor.shape[0]):
             data_source = data_sources[i]
             if data_source not in data_source_reward:
                 data_source_reward[data_source] = []
             data_source_reward[data_source].append(reward_tensor[i].item())
 
+            if data_source not in data_source_response_lengths:
+                data_source_response_lengths[data_source] = []
+            data_source_response_lengths[data_source].append(lengths[i])
+
         metric_dict = {}
         for data_source, rewards in data_source_reward.items():
             metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
+
+        for data_source, lengths in data_source_response_lengths.items():
+            metric_dict[f'val/test_length/{data_source}'] = np.mean(lengths)
 
         return metric_dict
 
@@ -567,6 +641,8 @@ class ReliftPPOTrainer(RayPPOTrainer):
         eos_token_id = self.tokenizer.eos_token_id
         pad_token_id = self.tokenizer.pad_token_id
         
+        batch = batch.batch
+
         prompts = batch['prompts'] # b x p_l
         tgt_input_ids = batch['tgt_input_ids'].clone() # b x r_l
         
@@ -604,7 +680,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
         batch['position_ids'] = torch.cat(
             [original_position_ids, response_position_ids], dim=-1)
 
-        return batch
+        return
 
     def fit(self):
         """
@@ -645,10 +721,6 @@ class ReliftPPOTrainer(RayPPOTrainer):
         # we start from step 1
         self.global_steps += 1
         last_val_metrics = None
-
-        n_samples = self.config.actor_rollout_ref.rollout.n
-        sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
-        sft_buffer_batch = None
 
         #breakpoint()
 
@@ -760,24 +832,17 @@ class ReliftPPOTrainer(RayPPOTrainer):
                     metrics['batch/solved'] = (reward_tensor.sum(-1) == success_value).sum().item() / len(uids)
                     metrics['batch/failed'] = (reward_tensor.sum(-1) == fail_value).sum().item() / len(uids)
 
-                    # how to buffer samples for subsequent SFT
+                    # how to buffer samples for SFT part
                     sft_buffer_uids = solve_none_uids
-
+                    
                     # create buffer batch
-                    sft_indexes = []
+                    buffer_indexes = []
+                    uids = batch.non_tensor_batch['uid']
                     for i, uid in enumerate(unique_uids):
                         if uid in sft_buffer_uids:
-                            indices = np.where(uids == uid)[0].tolist()
-                            sft_indexes.extend(indices)
-                    
-                    shape = batch.batch["response_mask"].shape
-                    sft_mask = torch.zeros(shape[0], shape[1], dtype=torch.bool)
-                    sft_mask[sft_indexes, :] = True
-                    batch.batch["sft_mask"] = sft_mask
-
-                    sft_index_mask = torch.zeros(shape[0], dtype=torch.bool)
-                    sft_index_mask[sft_indexes] = True
-                    batch.batch[sft_index_mask] = self.replace_response_in_batch(batch.batch[sft_index_mask])
+                            indices = np.where(uids == uid)[0]
+                            indice = indices[0]
+                            buffer_indexes.append(indice)
 
                     # recompute old_log_probs
                     with _timer("old_log_prob", timing_raw):
@@ -872,12 +937,29 @@ class ReliftPPOTrainer(RayPPOTrainer):
                         critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
                         metrics.update(critic_output_metrics)
 
+                    if buffer_indexes:
+                        # sft_batch is new item
+                        sft_batch = batch.select_idxs(buffer_indexes)
+                    else:
+                        sft_batch = None
+
+                    # replace responses for sft_batch
+                    self.replace_response_in_batch(sft_batch)
+                    
+                    # change the origin batch
+                    replace_rows(batch, sft_batch, buffer_indexes)
+
+                    # add info about sft_indexes
+                    sft_mask = torch.zeros_like(batch.batch['responses'], dtype=torch.bool)
+                    sft_mask[buffer_indexes,:] = True
+                    batch.batch["sft_mask"] = sft_mask
+
                     # implement critic warmup
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
                         with _timer("update_actor", timing_raw):
                             batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
-                            actor_output = self.actor_rollout_wg.update_actor(batch)
+                            actor_output = self.actor_rollout_wg.relift_update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)
 
@@ -897,30 +979,6 @@ class ReliftPPOTrainer(RayPPOTrainer):
                                 dump_path=rollout_data_dir,
                             )
 
-                    # SFT update using hard-batch
-                    '''
-                    if sft_data_size != -1 and sft_buffer_batch is not None and len(sft_buffer_batch) >= sft_data_size:
-                        with _timer('sft_update_actor', timing_raw):
-                            print("SFT")
-                            
-                            sft_buffer_batch.to('cpu')
-                            sft_buffer_batch.batch.to('cpu')
-                            
-                            sft_train_batch = sft_buffer_batch.slice(0,sft_data_size)
-                            
-                            # replace on-policy with off-policy
-                            self.replace_response_in_batch(sft_train_batch)
-                            
-                            if len(sft_buffer_batch) == sft_data_size:
-                                sft_buffer_batch = None
-                            else:
-                                sft_buffer_batch = sft_buffer_batch.slice(sft_data_size, len(sft_buffer_batch))
-
-                            self._balance_batch(sft_train_batch, metrics=metrics)
-                            sft_output = self.actor_rollout_wg.sft_update_actor(sft_train_batch)
-                            sft_output_metrics = reduce_metrics(sft_output.meta_info['metrics'])
-                            metrics.update(sft_output_metrics)
-                    '''
                     # validate
                     if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
                         with _timer("testing", timing_raw):

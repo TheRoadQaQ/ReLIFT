@@ -49,6 +49,7 @@ actor_rollout_ref:
     use_dynamic_bsz: False
     ppo_max_token_len_per_gpu: 16384 # n * ${data.max_prompt_length} + ${data.max_response_length}
     grad_clip: 1.0
+    max_grad_norm: 10000.0
     # pg_losses2 = -advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
     clip_ratio: 0.2 # default value if clip_ratio_low and clip_ratio_high are not specified
     clip_ratio_low: 0.2
@@ -76,6 +77,12 @@ actor_rollout_ref:
       weight_decay: 0.01
       sft:
         lr: 1e-6
+        lr_warmup_steps: -1 # Prioritized. Negative values mean delegating to lr_warmup_steps_ratio.
+        lr_warmup_steps_ratio: 0.  # the total steps will be injected during runtime
+        min_lr_ratio: 0.0   # only used with cosine lr scheduler, default to 0.0
+        num_cycles: 0.5     # only used with cosine lr scheduler, default to 0.5
+        total_training_steps: -1
+        warmup_style: constant  # select from constant/cosine
     fsdp_config:
       wrap_policy:
         # transformer_layer_cls_to_wrap: None
@@ -94,6 +101,7 @@ actor_rollout_ref:
       sft_micro_batch_size_per_gpu: 2
       grad_clip: 1.0
       max_sft_grad_norm: 100000
+      using_dynamic_max_sft_grad_norm: False
       entropy_coeff: 0.001 
   ref:
     strategy: fsdp
