@@ -841,8 +841,9 @@ class ReliftPPOTrainer(RayPPOTrainer):
                     for i, uid in enumerate(unique_uids):
                         if uid in sft_buffer_uids:
                             indices = np.where(uids == uid)[0]
-                            indice = indices[0]
-                            buffer_indexes.append(indice)
+                            #indice = indices[0]
+                            #buffer_indexes.append(indice)
+                            buffer_indexes.extend(indices)
 
                     # recompute old_log_probs
                     with _timer("old_log_prob", timing_raw):
