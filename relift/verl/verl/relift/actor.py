@@ -522,7 +522,7 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                         calculate_entropy = True
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
 
-                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6, compute_sft_loss_v4_per_sentence, compute_sft_loss_v5_per_sentence, compute_sft_loss_v7
+                    from .core_algos import compute_sft_loss, compute_sft_loss_v1, compute_sft_loss_v2, compute_sft_loss_v3, compute_sft_loss_v4, compute_sft_loss_v5, compute_sft_loss_v6, compute_sft_loss_v4_per_sentence, compute_sft_loss_v5_per_sentence, compute_sft_loss_v7, compute_sft_loss_v8
                     
                     if loss_type == "v0":
                         loss_fn = compute_sft_loss
@@ -548,6 +548,9 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
                         ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask, entropy=entropy)
                     elif loss_type == "v7":
                         loss_fn = compute_sft_loss_v7
+                        ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask)
+                    elif loss_type == "v8":
+                        loss_fn = compute_sft_loss_v8
                         ret_dict = loss_fn(log_prob=log_prob, eos_mask=response_mask)
                     elif loss_type == "v4_per_sentence":
                         loss_fn = compute_sft_loss_v4_per_sentence

@@ -955,6 +955,64 @@ class ReliftPPOTrainer(RayPPOTrainer):
                     sft_mask[buffer_indexes,:] = True
                     batch.batch["sft_mask"] = sft_mask
 
+                    # calculate sft and rl weight
+                    if self.config.trainer.sft_weight_method == "v0":
+                        # do not useful same as rl
+                        current_acc = metrics['batch/solved']
+                        sft_weight = 1 - current_acc
+                        
+                        batch.meta_info['sft_weight'] = sft_weight
+                        metrics['weight/sft_weight'] = sft_weight
+                    elif self.config.trainer.sft_weight_method == "v1":
+                        # do not useful same as rl
+                        # 1. 从配置中获取超参数，并提供合理的默认值
+                        c = self.config.trainer.get('sft_weight_c', 0.5)
+                        k = self.config.trainer.get('sft_weight_k', 10.0)
+                        beta = self.config.trainer.get('ema_beta', 0.9)
+                    
+                        # 2. 获取当前batch的准确率
+                        # metrics['batch/solved'] 应该是一个0到1之间的浮点数
+                        current_acc = metrics['batch/solved']
+                    
+                        # 3. 更新EMA准确率 (这是关键的状态更新)
+                        if self.global_steps == 1:
+                            self.acc_ema = current_acc
+                        
+                        self.acc_ema = beta * self.acc_ema + (1 - beta) * current_acc
+                    
+                        # 4. 使用Sigmoid函数计算RL的权重
+                        # 公式: w_rl = sigmoid(k * (acc_ema - c))
+                        # 我们将计算移到CPU上，因为它只是一个标量
+                        # torch.tensor(...) 确保输入是张量，以便使用torch.sigmoid
+                        rl_weight_tensor = torch.sigmoid(torch.tensor(k * (self.acc_ema - c)))
+                        
+                        # 5. 计算SFT的权重
+                        # w_sft = 1 - w_rl
+                        sft_weight_tensor = 1.0 - rl_weight_tensor
+                    
+                        # 6. 转换为Python浮点数以便使用和记录
+                        sft_weight = sft_weight_tensor.item()
+            
+                        # 7. (推荐) 将所有相关信息存入meta_info以便于监控和调试
+                        batch.meta_info['sft_weight'] = sft_weight
+                        metrics['weight/sft_weight'] = sft_weight
+                    elif self.config.trainer.sft_weight_method == "chord":
+                        start_mu = 0.9
+                        end_mu = 0.05
+                        total_decay_steps = 200
+                        
+                        if self.global_steps <= total_decay_steps:
+                            mu = start_mu + self.global_steps * (end_mu - start_mu) / total_decay_steps
+                        else:
+                            # 衰减期结束后，保持最终值不变
+                            mu = end_mu
+                            
+                        batch.meta_info['sft_weight'] = mu
+                        metrics['weight/sft_weight'] = mu
+                    else:
+                        raise NotImplementedError("no such sft weigth method")
+                    
+
                     # implement critic warmup
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor

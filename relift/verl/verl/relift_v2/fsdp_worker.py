@@ -658,10 +658,7 @@ class ReLIFTActorRolloutRefWorker(Worker):
             data = self.ulysses_sharding_manager.preprocess_data(data=data)
             # perform training
             with Timer(name="update_policy", logger=None) as timer:
-                if self.config.actor.update_version == "v2":
-                    metrics = self.actor.relift_update_policy_v2(data=data)
-                else:
-                    metrics = self.actor.relift_update_policy(data=data)
+                metrics = self.actor.relift_update_policy(data=data)
             delta_time = timer.last
             global_num_tokens = data.meta_info["global_token_num"]
             estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)

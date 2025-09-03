@@ -66,7 +66,9 @@ python prepare_train_luffy_format.py
 ```
 
 ## Model Preparation
-You need to first download RoadQAQ/Qwen2.5-Math-1.5B-16k-think, RoadQAQ/Qwen2.5-Math-7B-think, RoadQAQ/Qwen2.5-7B-think. If you find downloading too difficult, you can modify the configuration files instead. For Qwen2.5-Math-1.5B-16k-think and Qwen2.5-Math-7B-think, update both config.json and tokenizer_config.json. For Qwen2.5-7B-think, only tokenizer_config.json needs to be changed.
+You need to first download RoadQAQ/Qwen2.5-Math-1.5B-16k-think, RoadQAQ/Qwen2.5-Math-7B-think, RoadQAQ/Qwen2.5-7B-think. 
+
+If you find downloading too difficult, you can modify the configuration files instead. For Qwen2.5-Math-1.5B-16k-think and Qwen2.5-Math-7B-think, please update config.json, enabling longer responses.
 
 
 ## Training
