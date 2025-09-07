@@ -501,34 +501,25 @@ class ReliftPPOTrainer(RayPPOTrainer):
 
         return metric_dict
 
-    def _new_validate(self):
-        reward_tensor_lst = []
-        data_source_lst = []
+    def _validate_with_save(self):
+        print("Validation: Generation Begin.")
     
-        for test_data in self.val_dataloader:
+        # 声明列表来存储所有样本的信息
+        all_sample_data = []
+        
+        # 跟踪在loader中的样本索引
+        sample_index_counter = 0
+    
+        for test_data in tqdm(self.val_dataloader):
             test_batch = DataProto.from_single_dict(test_data)
-    
-            # 只在 rule-based rm 上做验证
-            if self.config.reward_model.enable and test_batch[0].non_tensor_batch.get("reward_model", {}).get("style") == "model":
+            
+            # 仅对基于规则的奖励模型进行验证
+            if self.config.reward_model.enable and test_batch[0].non_tensor_batch['reward_model']['style'] == 'model':
                 return {}
     
             n_val_samples = self.config.actor_rollout_ref.rollout.val_kwargs.n
-            test_batch = test_batch.repeat(repeat_times=n_val_samples, interleave=True)
-    
-            # 去除生成不需要的 keys
-            batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
-            non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
-            if "multi_modal_data" in test_batch.non_tensor_batch:
-                non_tensor_batch_keys_to_pop.append("multi_modal_data")
-            if "raw_prompt" in test_batch.non_tensor_batch:
-                non_tensor_batch_keys_to_pop.append("raw_prompt")
-            if "tools_kwargs" in test_batch.non_tensor_batch:
-                non_tensor_batch_keys_to_pop.append("tools_kwargs")
-            test_gen_batch = test_batch.pop(
-                batch_keys=batch_keys_to_pop,
-                non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
-            )
-    
+            test_batch_repeated = test_batch.repeat(repeat_times=n_val_samples, interleave=True)
+            test_gen_batch = test_batch_repeated.pop(['input_ids', 'attention_mask', 'position_ids'])
             test_gen_batch.meta_info = {
                 "eos_token_id": self.tokenizer.eos_token_id,
                 "pad_token_id": self.tokenizer.pad_token_id,
@@ -539,42 +530,47 @@ class ReliftPPOTrainer(RayPPOTrainer):
     
             # pad to be divisible by dp_size
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
-            if not self.async_rollout_mode:
-                test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
-            else:
-                self.async_rollout_manager.wake_up()
-                test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
-                self.async_rollout_manager.sleep()
-    
+            test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
     
-            # 合并生成结果
-            test_batch = test_batch.union(test_output_gen_batch)
+            test_batch_union = test_batch_repeated.union(test_output_gen_batch)
     
-            # 只计算 reward
-            reward_tensor = self.val_reward_fn(test_batch, return_dict=False)
-            reward_tensor_lst.append(reward_tensor)
-            data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0]))
+            # evaluate using reward_function
+            reward_tensor = self.val_reward_fn(test_batch_union, validation_or_not=True)
     
-        print("Validation: Generation end.")
+            # 获取生成的文本响应
+            prompt_length = test_output_gen_batch.batch['prompts'].shape[-1]
+            response_ids = test_output_gen_batch.batch['responses'][:, prompt_length:]
+            # responses = self.tokenizer.decode(response_ids) # 这一行可能因为tokenizer的batch decode功能而需要修改
+            # 如果tokenizer.decode不能处理整个batch，你需要循环处理
+            responses = [self.tokenizer.decode(ids.tolist(), skip_special_tokens=True) for ids in response_ids]
     
-        reward_tensor = torch.cat(reward_tensor_lst, dim=0).sum(-1).cpu()  # (batch_size,)
-        data_sources = np.concatenate(data_source_lst, axis=0)
     
-        # 按 data_source 分类统计均值
-        data_source_reward = {}
-        for i in range(reward_tensor.shape[0]):
-            data_source = data_sources[i]
-            if data_source not in data_source_reward:
-                data_source_reward[data_source] = []
-            data_source_reward[data_source].append(reward_tensor[i].item())
+            # 获取每个样本的验证结果和响应
+            batch_size = test_batch.batch['input_ids'].shape[0]
+            for i in range(batch_size):
+                sample_data = {
+                    'sample_index': sample_index_counter + i,
+                    'responses': responses[i*n_val_samples : (i+1)*n_val_samples],
+                    'rewards': reward_tensor[i*n_val_samples : (i+1)*n_val_samples].sum(-1).tolist(),
+                    'acc': reward_tensor[i*n_val_samples : (i+1)*n_val_samples].sum().item() / n_val_samples,
+                    'response_lengths': test_output_gen_batch.batch['attention_mask'][i*n_val_samples : (i+1)*n_val_samples, prompt_length:].sum(1).tolist()
+                }
+                all_sample_data.append(sample_data)
+            
+            sample_index_counter += batch_size
     
-        metric_dict = {}
-        for data_source, rewards in data_source_reward.items():
-            metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
+        print('Validation: Generation and data collection end.')
     
-        return metric_dict
+        # 使用pandas和pyarrow保存为parquet文件
+        if all_sample_data:
+            import pandas as pd
+            df = pd.DataFrame(all_sample_data)
+            df.to_parquet('validation_results.parquet')
+            print("Validation results saved to validation_results.parquet.")
+    
+        return None
 
     def replace_response_in_batch(self, batch):
         """
@@ -650,7 +646,10 @@ class ReliftPPOTrainer(RayPPOTrainer):
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
-            val_metrics = self._validate()
+            if self.config.trainer.get("val_before_train_with_save", False):
+                val_metrics = self._validate_with_save()
+            else:
+                val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
             pprint(f"Initial validation metrics: {val_metrics}")
             logger.log(data=val_metrics, step=self.global_steps)
@@ -667,6 +666,8 @@ class ReliftPPOTrainer(RayPPOTrainer):
         n_samples = self.config.actor_rollout_ref.rollout.n
         sft_data_size = self.config.actor_rollout_ref.actor.sft.sft_data_size
         sft_buffer_batch = None
+
+        relift_skip_steps = self.config.trainer.get("relift_skip_steps", 1)
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -789,7 +790,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
                             buffer_indexes.append(indice)
 
                     # update sft_buffer_batch
-                    if sft_data_size != -1 and buffer_indexes:
+                    if sft_data_size != -1 and buffer_indexes and self.global_steps >= relift_skip_steps:
                         buffer_batch = batch.select_idxs(buffer_indexes)
                         
                         if sft_buffer_batch is not None:
@@ -916,7 +917,7 @@ class ReliftPPOTrainer(RayPPOTrainer):
                             )
 
                     # SFT update using hard-batch
-                    if sft_data_size != -1 and sft_buffer_batch is not None and len(sft_buffer_batch) >= sft_data_size:
+                    if sft_data_size != -1 and self.global_steps >= relift_skip_steps and sft_buffer_batch is not None and len(sft_buffer_batch) >= sft_data_size:
                         with _timer('sft_update_actor', timing_raw):
                             print("SFT")
                             
