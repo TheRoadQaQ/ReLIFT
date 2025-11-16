@@ -51,12 +51,11 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
 class ReLIFTDataParallelPPOActor(BasePPOActor):
-    def __init__(self, config, actor_module: nn.Module, actor_optimizer: torch.optim.Optimizer = None, sft_actor_optimizer: torch.optim.Optimizer = None):
+    def __init__(self, config, actor_module: nn.Module, actor_optimizer: torch.optim.Optimizer = None):
         """When optimizer is None, it is Reference Policy"""
         super().__init__(config)
         self.actor_module = actor_module
         self.actor_optimizer = actor_optimizer
-        self.sft_actor_optimizer = sft_actor_optimizer
 
         self.use_remove_padding = self.config.get("use_remove_padding", False)
         if torch.distributed.get_rank() == 0:
@@ -251,26 +250,6 @@ class ReLIFTDataParallelPPOActor(BasePPOActor):
             self.actor_optimizer.zero_grad()
         else:
             self.actor_optimizer.step()
-        return grad_norm
-    
-    def _sft_optimizer_step(self):
-        assert self.config.sft.grad_clip is not None
-
-        if isinstance(self.actor_module, FSDP):
-            grad_norm = self.actor_module.clip_grad_norm_(max_norm=self.config.sft.grad_clip)
-        elif isinstance(self.actor_module, FSDPModule):
-            grad_norm = fsdp2_clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.sft.grad_clip)
-        else:
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.actor_module.parameters(), max_norm=self.config.sft.grad_clip)
-
-        # if grad_norm is not finite, skip the update
-        if (not torch.isfinite(grad_norm)) or (grad_norm > self.config.sft.max_sft_grad_norm) \
-                or (self.config.sft.using_dynamic_max_sft_grad_norm and (self.before_sft_grad_norm is not None) and grad_norm > 1.5 * self.before_sft_grad_norm):
-            print(f"WARN: rank {torch.distributed.get_rank()} grad_norm is not finite or too large: {grad_norm}")
-            self.sft_actor_optimizer.zero_grad()
-        else:
-            self.before_sft_grad_norm = grad_norm
-            self.sft_actor_optimizer.step()
         return grad_norm
 
     @GPUMemoryLogger(role="dp actor", logger=logger)
